@@ -17,5 +17,9 @@
   },
   "devDependencies": {
     "concurrently": "^10.0.3"
+  },
+  "allowScripts": {
+    "@embedded-postgres/windows-x64@18.4.0-beta.17": true,
+    "embedded-postgres@18.4.0-beta.17": true
   }
 }

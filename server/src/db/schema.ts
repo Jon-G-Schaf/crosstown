@@ -1,0 +1,97 @@
+import {
+  boolean,
+  date,
+  doublePrecision,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+} from "drizzle-orm/pg-core";
+
+// Static GTFS (loaded by scripts/load-gtfs.ts, replaced wholesale on each load)
+
+export const routes = pgTable("routes", {
+  routeId: text("route_id").primaryKey(),
+  shortName: text("short_name").notNull(),
+  longName: text("long_name").notNull().default(""),
+  type: integer("type").notNull().default(3),
+  color: text("color"),
+  textColor: text("text_color"),
+  sortOrder: integer("sort_order"),
+});
+
+export const stops = pgTable("stops", {
+  stopId: text("stop_id").primaryKey(),
+  code: text("code"),
+  name: text("name").notNull(),
+  lat: doublePrecision("lat").notNull(),
+  lon: doublePrecision("lon").notNull(),
+});
+
+export const trips = pgTable(
+  "trips",
+  {
+    tripId: text("trip_id").primaryKey(),
+    routeId: text("route_id").notNull(),
+    serviceId: text("service_id").notNull(),
+    headsign: text("headsign"),
+    directionId: integer("direction_id"),
+    shapeId: text("shape_id"),
+    blockId: text("block_id"),
+  },
+  (t) => [index("trips_route_idx").on(t.routeId)],
+);
+
+// arrival/departure are seconds since "noon minus 12h" (GTFS time, can exceed 24:00:00)
+export const stopTimes = pgTable(
+  "stop_times",
+  {
+    tripId: text("trip_id").notNull(),
+    stopSequence: integer("stop_sequence").notNull(),
+    stopId: text("stop_id").notNull(),
+    arrivalSec: integer("arrival_sec"),
+    departureSec: integer("departure_sec"),
+  },
+  (t) => [
+    primaryKey({ columns: [t.tripId, t.stopSequence] }),
+    index("stop_times_stop_idx").on(t.stopId),
+  ],
+);
+
+// One row per shape, coordinates as [lon, lat] pairs ready for GeoJSON
+export const shapes = pgTable("shapes", {
+  shapeId: text("shape_id").primaryKey(),
+  coordinates: jsonb("coordinates").$type<[number, number][]>().notNull(),
+});
+
+export const calendar = pgTable("calendar", {
+  serviceId: text("service_id").primaryKey(),
+  monday: boolean("monday").notNull(),
+  tuesday: boolean("tuesday").notNull(),
+  wednesday: boolean("wednesday").notNull(),
+  thursday: boolean("thursday").notNull(),
+  friday: boolean("friday").notNull(),
+  saturday: boolean("saturday").notNull(),
+  sunday: boolean("sunday").notNull(),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+});
+
+export const calendarDates = pgTable(
+  "calendar_dates",
+  {
+    serviceId: text("service_id").notNull(),
+    date: date("date").notNull(),
+    exceptionType: integer("exception_type").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.serviceId, t.date] })],
+);
+
+export const gtfsMeta = pgTable("gtfs_meta", {
+  id: integer("id").primaryKey().default(1),
+  loadedAt: timestamp("loaded_at", { withTimezone: true }).notNull(),
+  source: text("source").notNull(),
+});
