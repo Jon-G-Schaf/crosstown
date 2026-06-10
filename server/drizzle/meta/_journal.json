@@ -15,6 +15,13 @@
       "when": 1781129624575,
       "tag": "0001_illegal_champions",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781131113907,
+      "tag": "0002_odd_nighthawk",
+      "breakpoints": true
     }
   ]
 }

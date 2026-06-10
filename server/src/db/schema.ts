@@ -113,6 +113,43 @@ export const vehiclePositions = pgTable(
   ],
 );
 
+// One row per (service day, trip, stop). TripUpdates keeps rewriting the row
+// until the bus passes the stop; the final value is the last prediction
+// before arrival, which is as close to "actual" as the feed gets.
+export const stopEvents = pgTable(
+  "stop_events",
+  {
+    serviceDate: date("service_date").notNull(),
+    tripId: text("trip_id").notNull(),
+    stopSequence: integer("stop_sequence").notNull(),
+    routeId: text("route_id").notNull(),
+    stopId: text("stop_id").notNull(),
+    delaySec: integer("delay_sec").notNull(),
+    eventTime: timestamp("event_time", { withTimezone: true }).notNull(),
+    lastSeen: timestamp("last_seen", { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.serviceDate, t.tripId, t.stopSequence] }),
+    index("stop_events_route_date_idx").on(t.routeId, t.serviceDate),
+    index("stop_events_stop_date_idx").on(t.stopId, t.serviceDate),
+  ],
+);
+
+// Nightly rollup of stop_events; daypart 'all' covers the whole service day
+export const routeDayStats = pgTable(
+  "route_day_stats",
+  {
+    routeId: text("route_id").notNull(),
+    serviceDate: date("service_date").notNull(),
+    daypart: text("daypart").notNull(),
+    observations: integer("observations").notNull(),
+    onTimePct: real("on_time_pct").notNull(),
+    avgDelaySec: real("avg_delay_sec").notNull(),
+    p90DelaySec: real("p90_delay_sec").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.routeId, t.serviceDate, t.daypart] })],
+);
+
 export const gtfsMeta = pgTable("gtfs_meta", {
   id: integer("id").primaryKey().default(1),
   loadedAt: timestamp("loaded_at", { withTimezone: true }).notNull(),

@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { routesPlugin } from "./routes/routes.js";
+import { statsPlugin } from "./routes/stats.js";
 import { streamPlugin } from "./routes/stream.js";
 import { vehiclesPlugin } from "./routes/vehicles.js";
 
@@ -17,6 +18,7 @@ export function buildApp() {
   app.register(routesPlugin);
   app.register(vehiclesPlugin);
   app.register(streamPlugin);
+  app.register(statsPlugin);
 
   return app;
 }

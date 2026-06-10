@@ -1,6 +1,8 @@
 import { buildApp } from "./app.js";
 import { runMigrations } from "./db/index.js";
+import { startTripUpdateIngest } from "./ingest/trip-updates.js";
 import { startVehicleIngest } from "./ingest/vehicles.js";
+import { startRollupJob } from "./jobs/rollup.js";
 
 try {
   process.loadEnvFile("../.env");
@@ -17,6 +19,8 @@ try {
   await app.listen({ port, host: "0.0.0.0" });
   if (process.env.DISABLE_INGEST !== "1") {
     startVehicleIngest(app.log);
+    startTripUpdateIngest(app.log);
+    startRollupJob(app.log);
   }
 } catch (err) {
   app.log.error(err);

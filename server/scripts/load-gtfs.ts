@@ -21,8 +21,7 @@ try {
   // no .env file; rely on real env vars
 }
 
-const GTFS_URL =
-  process.env.GTFS_URL ?? "https://www.cota.com/COTA/media/COTAContent/OpenGTFSData.zip";
+const GTFS_URL = process.env.GTFS_URL ?? "https://www.cota.com/data/cota.gtfs.zip";
 
 type Row = Record<string, string>;
 

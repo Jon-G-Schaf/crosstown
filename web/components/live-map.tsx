@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { API_URL, type Vehicle, type VehiclesResponse } from "@/lib/api";
@@ -162,6 +163,12 @@ export function LiveMap() {
         <p className="text-sm text-neutral-600">
           {count == null ? "Connecting..." : `${count} COTA buses live`}
         </p>
+        <Link
+          href="/routes"
+          className="mt-1 inline-block text-sm font-medium text-blue-700 hover:underline"
+        >
+          Reliability rankings &rarr;
+        </Link>
         <label className="mt-3 block text-xs font-medium uppercase tracking-wide text-neutral-500">
           Route
           <select
