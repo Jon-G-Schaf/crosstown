@@ -1,4 +1,5 @@
 import {
+  bigserial,
   boolean,
   date,
   doublePrecision,
@@ -7,6 +8,7 @@ import {
   jsonb,
   pgTable,
   primaryKey,
+  real,
   text,
   timestamp,
 } from "drizzle-orm/pg-core";
@@ -88,6 +90,27 @@ export const calendarDates = pgTable(
     exceptionType: integer("exception_type").notNull(),
   },
   (t) => [primaryKey({ columns: [t.serviceId, t.date] })],
+);
+
+// Realtime: raw vehicle pings, pruned after 48h (see ingest/retention)
+export const vehiclePositions = pgTable(
+  "vehicle_positions",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    vehicleId: text("vehicle_id").notNull(),
+    tripId: text("trip_id"),
+    routeId: text("route_id"),
+    lat: doublePrecision("lat").notNull(),
+    lon: doublePrecision("lon").notNull(),
+    bearing: real("bearing"),
+    speed: real("speed"),
+    ts: timestamp("ts", { withTimezone: true }).notNull(),
+    insertedAt: timestamp("inserted_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("vehicle_positions_ts_idx").on(t.ts),
+    index("vehicle_positions_route_ts_idx").on(t.routeId, t.ts),
+  ],
 );
 
 export const gtfsMeta = pgTable("gtfs_meta", {

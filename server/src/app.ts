@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { routesPlugin } from "./routes/routes.js";
+import { vehiclesPlugin } from "./routes/vehicles.js";
 
 export function buildApp() {
   const app = Fastify({ logger: true });
@@ -13,6 +14,7 @@ export function buildApp() {
   }));
 
   app.register(routesPlugin);
+  app.register(vehiclesPlugin);
 
   return app;
 }
