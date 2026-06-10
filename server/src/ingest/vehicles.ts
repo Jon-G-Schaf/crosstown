@@ -27,8 +27,17 @@ let snapshot: VehicleSnapshot[] = [];
 let snapshotAt: string | null = null;
 const lastSeenTs = new Map<string, number>();
 
-export function getSnapshot() {
+export type SnapshotPayload = { vehicles: VehicleSnapshot[]; updatedAt: string | null };
+
+const listeners = new Set<(snap: SnapshotPayload) => void>();
+
+export function getSnapshot(): SnapshotPayload {
   return { vehicles: snapshot, updatedAt: snapshotAt };
+}
+
+export function subscribeToSnapshots(fn: (snap: SnapshotPayload) => void) {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
 }
 
 function toMillis(ts: number | { toNumber(): number } | null | undefined): number | null {
@@ -75,6 +84,8 @@ export async function pollVehiclesOnce(log: FastifyBaseLogger) {
 
   snapshot = next;
   snapshotAt = new Date().toISOString();
+  const payload = getSnapshot();
+  for (const fn of listeners) fn(payload);
 
   if (fresh.length > 0) {
     await db.insert(vehiclePositions).values(fresh);
