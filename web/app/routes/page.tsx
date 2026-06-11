@@ -2,6 +2,8 @@ import Link from "next/link";
 import { API_URL } from "@/lib/api";
 import { fmtDelay, fmtPct } from "@/lib/format";
 import { brightenForDark, statusColor } from "@/lib/colors";
+import { CountUp } from "@/components/count-up";
+import { SiteFooter } from "@/components/site-footer";
 import { SiteNav } from "@/components/site-nav";
 
 export const dynamic = "force-dynamic";
@@ -28,8 +30,16 @@ export default async function RoutesPage({
   const { range: rawRange } = await searchParams;
   const range = RANGES.find((r) => String(r) === rawRange) ?? 7;
 
-  const res = await fetch(`${API_URL}/api/stats/routes?range=${range}`, { cache: "no-store" });
+  const [res, sysRes] = await Promise.all([
+    fetch(`${API_URL}/api/stats/routes?range=${range}`, { cache: "no-store" }),
+    fetch(`${API_URL}/api/stats/system`, { cache: "no-store" }),
+  ]);
   const data: { routes: RouteStat[] } = res.ok ? await res.json() : { routes: [] };
+  const sys: {
+    todayOnTimePct: number | null;
+    arrivalsToday: number;
+    arrivalsOnRecord: number;
+  } | null = sysRes.ok ? await sysRes.json() : null;
 
   return (
     <>
@@ -41,6 +51,44 @@ export default async function RoutesPage({
             On time means arriving between 1 minute early and 5 minutes late, measured from
             COTA&apos;s own realtime feed. Today counts as far as it has happened.
           </p>
+
+          {sys && (
+            <div className="mt-6 grid grid-cols-3 gap-3 max-sm:grid-cols-1">
+              <div className="panel px-4 py-3.5">
+                <p className="text-[10px] font-medium uppercase tracking-label text-faint">
+                  System on time today
+                </p>
+                <p
+                  className="mt-1 text-2xl"
+                  style={{
+                    color: sys.todayOnTimePct != null ? statusColor(sys.todayOnTimePct) : undefined,
+                  }}
+                >
+                  {sys.todayOnTimePct == null ? (
+                    <span className="font-mono text-fog">—</span>
+                  ) : (
+                    <CountUp value={sys.todayOnTimePct} suffix="%" />
+                  )}
+                </p>
+              </div>
+              <div className="panel px-4 py-3.5">
+                <p className="text-[10px] font-medium uppercase tracking-label text-faint">
+                  Arrivals today
+                </p>
+                <p className="mt-1 text-2xl text-fog">
+                  <CountUp value={sys.arrivalsToday} decimals={0} />
+                </p>
+              </div>
+              <div className="panel px-4 py-3.5">
+                <p className="text-[10px] font-medium uppercase tracking-label text-faint">
+                  Arrivals on record
+                </p>
+                <p className="mt-1 text-2xl text-fog">
+                  <CountUp value={sys.arrivalsOnRecord} decimals={0} />
+                </p>
+              </div>
+            </div>
+          )}
           <nav className="mt-5 flex gap-2">
             {RANGES.map((r) => (
               <Link
@@ -112,10 +160,8 @@ export default async function RoutesPage({
           </ol>
         )}
 
-        <p className="mt-8 font-mono text-xs text-faint">
-          Data: COTA GTFS-realtime · collected continuously since June 2026
-        </p>
       </main>
+      <SiteFooter />
     </>
   );
 }

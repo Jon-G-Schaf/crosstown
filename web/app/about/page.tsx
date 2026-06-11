@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SiteFooter } from "@/components/site-footer";
 import { SiteNav } from "@/components/site-nav";
 
 export const metadata = { title: "About" };
@@ -84,6 +85,7 @@ export default function AboutPage() {
           </p>
         </div>
       </main>
+      <SiteFooter />
     </>
   );
 }

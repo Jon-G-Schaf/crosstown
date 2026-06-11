@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { RouteGlyph } from "./wordmark";
 
 export function SiteNav({ active }: { active: "routes" | "about" }) {
   const item = (href: string, key: string, label: string) => (
@@ -16,7 +17,8 @@ export function SiteNav({ active }: { active: "routes" | "about" }) {
   return (
     <header className="border-b border-line">
       <nav className="mx-auto flex max-w-3xl items-baseline gap-6 px-4 py-4">
-        <Link href="/" className="text-base font-semibold tracking-tight text-fog">
+        <Link href="/" className="flex items-center gap-2.5 text-base font-semibold tracking-tight text-fog">
+          <RouteGlyph />
           Crosstown
         </Link>
         <span className="flex-1" />

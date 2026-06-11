@@ -2,9 +2,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { API_URL } from "@/lib/api";
 import { fmtDelay, fmtPct, DAYPART_LABELS } from "@/lib/format";
-import { brightenForDark } from "@/lib/colors";
+import { brightenForDark, statusColor } from "@/lib/colors";
 import { CountUp } from "@/components/count-up";
 import { DailyOnTimeChart, DaypartChart } from "@/components/route-charts";
+import { RouteMap } from "@/components/route-map";
+import { SiteFooter } from "@/components/site-footer";
 import { SiteNav } from "@/components/site-nav";
 
 export const dynamic = "force-dynamic";
@@ -28,20 +30,31 @@ export default async function RouteDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const res = await fetch(`${API_URL}/api/stats/routes/${id}?range=30`, { cache: "no-store" });
+  const [res, shapeRes] = await Promise.all([
+    fetch(`${API_URL}/api/stats/routes/${id}?range=30`, { cache: "no-store" }),
+    fetch(`${API_URL}/api/routes/${id}`, { next: { revalidate: 3600 } }),
+  ]);
   if (res.status === 404) notFound();
   if (!res.ok) throw new Error(`stats request failed: ${res.status}`);
   const data: Detail = await res.json();
+  const shapeData: { directions: { coordinates: [number, number][] }[] } | null = shapeRes.ok
+    ? await shapeRes.json()
+    : null;
+  const lines = (shapeData?.directions ?? [])
+    .map((d) => d.coordinates)
+    .filter((c) => c.length > 1);
 
   const color = brightenForDark(data.route.color);
   const total = data.series.reduce(
     (acc, s) => ({
       obs: acc.obs + s.observations,
-      weighted: acc.weighted + s.onTimePct * s.observations,
+      weightedPct: acc.weightedPct + s.onTimePct * s.observations,
+      weightedDelay: acc.weightedDelay + s.avgDelaySec * s.observations,
     }),
-    { obs: 0, weighted: 0 },
+    { obs: 0, weightedPct: 0, weightedDelay: 0 },
   );
-  const overallPct = total.obs > 0 ? total.weighted / total.obs : null;
+  const overallPct = total.obs > 0 ? total.weightedPct / total.obs : null;
+  const overallDelay = total.obs > 0 ? total.weightedDelay / total.obs : null;
 
   return (
     <>
@@ -51,7 +64,7 @@ export default async function RouteDetailPage({
           &larr; All routes
         </Link>
 
-        <header className="mb-10 mt-4 flex items-start gap-4">
+        <header className="mt-4 flex items-start gap-4">
           <span
             className="inline-flex h-11 w-15 min-w-15 items-center justify-center rounded-md font-mono text-lg font-semibold text-ink"
             style={{ backgroundColor: color }}
@@ -62,19 +75,47 @@ export default async function RouteDetailPage({
             <h1 className="text-2xl font-semibold tracking-tight text-fog">
               {data.route.longName}
             </h1>
-            {overallPct == null ? (
-              <p className="mt-1 text-sm text-muted">No arrivals recorded yet.</p>
-            ) : (
-              <p className="mt-1 text-sm text-muted">
-                <span className="text-lg text-fog">
-                  <CountUp value={overallPct} suffix="%" />
-                </span>{" "}
-                on time over the last {data.range} days ·{" "}
-                <span className="font-mono">{total.obs.toLocaleString()}</span> arrivals
-              </p>
-            )}
+            <p className="mt-1 text-sm text-muted">{`Last ${data.range} days, measured from COTA's realtime feed`}</p>
           </div>
         </header>
+
+        {lines.length > 0 && (
+          <div className="panel mt-6 h-52 overflow-hidden max-sm:h-40">
+            <RouteMap lines={lines} color={color} />
+          </div>
+        )}
+
+        <section className="mt-6 mb-10 grid grid-cols-3 gap-3 max-sm:grid-cols-1">
+          <div className="panel px-4 py-3.5">
+            <p className="text-[10px] font-medium uppercase tracking-label text-faint">On time</p>
+            <p
+              className="mt-1 text-2xl"
+              style={{ color: overallPct != null ? statusColor(overallPct) : undefined }}
+            >
+              {overallPct == null ? (
+                <span className="font-mono text-fog">—</span>
+              ) : (
+                <CountUp value={overallPct} suffix="%" />
+              )}
+            </p>
+          </div>
+          <div className="panel px-4 py-3.5">
+            <p className="text-[10px] font-medium uppercase tracking-label text-faint">
+              Avg delay
+            </p>
+            <p className="mt-1 font-mono text-2xl text-fog">
+              {overallDelay == null ? "—" : fmtDelay(overallDelay)}
+            </p>
+          </div>
+          <div className="panel px-4 py-3.5">
+            <p className="text-[10px] font-medium uppercase tracking-label text-faint">
+              Arrivals
+            </p>
+            <p className="mt-1 text-2xl text-fog">
+              <CountUp value={total.obs} decimals={0} />
+            </p>
+          </div>
+        </section>
 
         {data.series.length > 0 && (
           <section className="mb-10">
@@ -130,6 +171,7 @@ export default async function RouteDetailPage({
           </section>
         )}
       </main>
+      <SiteFooter />
     </>
   );
 }
