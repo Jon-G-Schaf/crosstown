@@ -29,7 +29,7 @@ export default function AboutPage() {
             <Link href="/" className="link-quiet text-fog">
               live map
             </Link>
-            ) and trip updates every minute, around the clock.
+            ) and trip updates every 30 seconds, around the clock.
           </p>
           <p>
             One wrinkle worth knowing: COTA&apos;s feed publishes predicted arrival times but
@@ -71,7 +71,7 @@ export default function AboutPage() {
 
           <div className="panel mt-2 px-5 py-4 font-mono text-xs leading-loose text-muted">
             <p className="text-faint">{"// the shape of it"}</p>
-            <p>COTA GTFS-RT ──&gt; poller (15s / 60s) ──&gt; Postgres</p>
+            <p>COTA GTFS-RT ──&gt; poller (15s / 30s) ──&gt; Postgres</p>
             <p>static GTFS ───&gt; loader ────────────────┘</p>
             <p>Postgres ──&gt; nightly rollups ──&gt; stats API ──&gt; charts</p>
             <p>poller ──&gt; SSE ──&gt; live map</p>

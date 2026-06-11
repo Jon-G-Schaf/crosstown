@@ -8,6 +8,8 @@ const VEHICLE_FEED_URL =
   process.env.VEHICLE_FEED_URL ??
   "https://gtfs-rt.cota.vontascloud.com/TMGTFSRealTimeWebService/Vehicle/VehiclePositions.pb";
 
+// The feed regenerates on a 30s cycle (measured June 11); 15s polling halves
+// the pickup latency, and If-Modified-Since makes the unchanged poll free.
 export const POLL_INTERVAL_MS = 15_000;
 const RETENTION_HOURS = 48;
 
@@ -55,9 +57,18 @@ function wireNumber(obj: object, key: string): number | null {
     : null;
 }
 
+let feedLastModified: string | null = null;
+
 export async function pollVehiclesOnce(log: FastifyBaseLogger) {
-  const res = await fetch(VEHICLE_FEED_URL);
+  const res = await fetch(VEHICLE_FEED_URL, {
+    headers: feedLastModified ? { "if-modified-since": feedLastModified } : undefined,
+  });
+  if (res.status === 304) {
+    log.info("vehicle poll: feed unchanged");
+    return;
+  }
   if (!res.ok) throw new Error(`vehicle feed responded ${res.status}`);
+  feedLastModified = res.headers.get("last-modified");
   const feed = GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(
     new Uint8Array(await res.arrayBuffer()),
   );

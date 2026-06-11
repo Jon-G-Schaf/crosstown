@@ -12,8 +12,10 @@ actually act on. Route 21 late every weekday evening? Now there's a chart.
 ## How it works
 
 - `server/` polls COTA's GTFS-realtime vehicle positions every 15s and trip
-  updates every 60s. COTA publishes predicted arrival times but no delay
-  field, so delays are computed against the static schedule in SQL at ingest.
+  updates every 30s (the feed itself regenerates every 30s; conditional
+  requests make unchanged polls free). COTA publishes predicted arrival times
+  but no delay field, so delays are computed against the static schedule in
+  SQL at ingest.
 - The last prediction before a bus reaches a stop is recorded as the observed
   arrival. Nightly jobs roll those up into per-route, per-daypart stats
   (on time = between 1 min early and 5 min late).

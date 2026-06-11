@@ -8,9 +8,18 @@ const TRIP_FEED_URL =
   process.env.TRIP_FEED_URL ??
   "https://gtfs-rt.cota.vontascloud.com/TMGTFSRealTimeWebService/TripUpdate/TripUpdates.pb";
 
-export const TRIP_POLL_INTERVAL_MS = 60_000;
+// The feed regenerates on a 30s cycle (measured June 11); polling faster
+// than that just re-downloads identical bytes.
+export const TRIP_POLL_INTERVAL_MS = 30_000;
 const RETENTION_DAYS = 90;
 const TZ = "America/New_York";
+
+// The feed honors If-Modified-Since with a 304, so an unchanged file costs
+// nothing: no download, no decode, no upsert. Skipping the upsert also means
+// last_seen freezes while the feed is stalled, which is what the observed-
+// event window in lib/reliability.ts wants (stale predictions should age
+// into ghosts, not stay perpetually "fresh").
+let feedLastModified: string | null = null;
 
 const { ScheduleRelationship } =
   GtfsRealtimeBindings.transit_realtime.TripUpdate.StopTimeUpdate;
@@ -102,8 +111,15 @@ export async function upsertCandidates(rows: Candidate[]) {
 }
 
 export async function pollTripUpdatesOnce(log: FastifyBaseLogger) {
-  const res = await fetch(TRIP_FEED_URL);
+  const res = await fetch(TRIP_FEED_URL, {
+    headers: feedLastModified ? { "if-modified-since": feedLastModified } : undefined,
+  });
+  if (res.status === 304) {
+    log.info("trip updates poll: feed unchanged");
+    return;
+  }
   if (!res.ok) throw new Error(`trip feed responded ${res.status}`);
+  feedLastModified = res.headers.get("last-modified");
   const feed = GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(
     new Uint8Array(await res.arrayBuffer()),
   );
