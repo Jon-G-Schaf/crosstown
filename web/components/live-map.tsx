@@ -20,6 +20,16 @@ const TRAIL_POINTS = 14;
 
 type RouteInfo = { routeId: string; shortName: string; longName: string; color: string | null };
 
+// COTA's GTFS route colors encode service tier (same color language as
+// their printed system map), so the legend labels are keyed by color.
+// Unknown colors simply don't get a legend row.
+const TIER_LABELS: [hex: string, label: string][] = [
+  ["AF272F", "Frequent"],
+  ["00205B", "Local"],
+  ["007B4B", "Crosstown"],
+  ["402A16", "Seasonal"],
+];
+
 type SystemStats = {
   todayOnTimePct: number | null;
   arrivalsToday: number;
@@ -480,6 +490,16 @@ export function LiveMap() {
   const live = count != null && !stalled;
   const selectedRoute = filter !== "all" ? routes.find((r) => r.routeId === filter) : null;
 
+  // Only the tiers actually present in the loaded routes, in fixed order,
+  // swatched with the same brightened color the strands are drawn in.
+  const routeColorSet = new Set(
+    routes.map((r) => (r.color ?? "").replace("#", "").toUpperCase()),
+  );
+  const legend = TIER_LABELS.filter(([hex]) => routeColorSet.has(hex)).map(([hex, label]) => ({
+    label,
+    color: brightenForDark(hex),
+  }));
+
   return (
     <div className="relative h-dvh w-full bg-ink">
       {/* maplibre forces position:relative on this node, so size it directly */}
@@ -493,6 +513,22 @@ export function LiveMap() {
             "radial-gradient(ellipse 95% 95% at 50% 45%, transparent 62%, rgba(12,15,20,0.6) 100%)",
         }}
       />
+
+      {legend.length > 0 && (
+        <div className="panel pointer-events-none absolute bottom-4 left-4 flex items-center gap-4 px-3.5 py-2 max-sm:bottom-3 max-sm:left-3 max-sm:gap-3">
+          {legend.map((t) => (
+            <span key={t.label} className="flex items-center gap-1.5">
+              <span
+                className="h-0.5 w-4 rounded-full"
+                style={{ backgroundColor: t.color }}
+              />
+              <span className="text-[10px] font-medium uppercase tracking-label text-muted">
+                {t.label}
+              </span>
+            </span>
+          ))}
+        </div>
+      )}
 
       <div className="panel absolute left-4 top-4 w-76 px-5 py-4 max-sm:left-3 max-sm:right-3 max-sm:top-3 max-sm:w-auto">
         <p className="text-[10px] font-medium uppercase tracking-label text-faint">
