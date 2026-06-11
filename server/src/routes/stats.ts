@@ -3,27 +3,37 @@ import { and, asc, eq, gte, lt, sql as dsqlRaw } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { routeDayStats, routes } from "../db/schema.js";
 import { localServiceDate, statsSelectSql } from "../jobs/rollup.js";
-import { mergeStats, type StatRow } from "../lib/reliability.js";
+import { mergeStats, OBSERVED_EVENT_SQL, type StatRow } from "../lib/reliability.js";
 
 const RANGES = new Set([7, 30, 90]);
 const LIVE_CACHE_MS = 60_000;
 
 type AggRow = StatRow & { routeId: string; daypart: string; serviceDate?: string };
 
-let liveCache: { at: number; rows: AggRow[] } | null = null;
+let liveCache: { at: number; rows: AggRow[]; pendingToday: number } | null = null;
 
-// Today's stop_events aggregated on the fly; rollups only cover finished days.
-async function liveTodayStats(): Promise<AggRow[]> {
-  if (liveCache && Date.now() - liveCache.at < LIVE_CACHE_MS) return liveCache.rows;
+// Today's stop_events aggregated on the fly; rollups only cover finished
+// days. pendingToday counts today's rows that are still forecasts (or
+// ghosts), so the on-record counter can exclude them.
+async function liveTodayStats(): Promise<{ rows: AggRow[]; pendingToday: number }> {
+  if (liveCache && Date.now() - liveCache.at < LIVE_CACHE_MS) return liveCache;
   const today = localServiceDate(0);
-  const raw = await db.execute<{
-    route_id: string;
-    daypart: string;
-    observations: number;
-    on_time_pct: number;
-    avg_delay_sec: number;
-    p90_delay_sec: number;
-  }>(statsSelectSql(today));
+  const [raw, [pending]] = await Promise.all([
+    db.execute<{
+      route_id: string;
+      daypart: string;
+      observations: number;
+      on_time_pct: number;
+      avg_delay_sec: number;
+      p90_delay_sec: number;
+    }>(statsSelectSql(today)),
+    db.execute<{ pending: number }>(dsqlRaw`
+      select count(*)::int as pending
+      from stop_events
+      where service_date = ${today}
+        and not (${dsqlRaw.raw(OBSERVED_EVENT_SQL)})
+    `),
+  ]);
   const rows = raw.map((r) => ({
     routeId: r.route_id,
     daypart: r.daypart,
@@ -32,8 +42,8 @@ async function liveTodayStats(): Promise<AggRow[]> {
     avgDelaySec: r.avg_delay_sec,
     p90DelaySec: r.p90_delay_sec,
   }));
-  liveCache = { at: Date.now(), rows };
-  return rows;
+  liveCache = { at: Date.now(), rows, pendingToday: pending?.pending ?? 0 };
+  return liveCache;
 }
 
 function parseRange(raw: unknown): number {
@@ -45,7 +55,7 @@ export async function statsPlugin(app: FastifyInstance) {
   // Headline numbers for the map panel and rankings hero. The on-record
   // count is Postgres' row estimate; close enough for a counter and free.
   app.get("/api/stats/system", async () => {
-    const live = await liveTodayStats();
+    const { rows: live, pendingToday } = await liveTodayStats();
     const alls = live.filter((l) => l.daypart === "all");
     const arrivalsToday = alls.reduce((sum, l) => sum + l.observations, 0);
     const todayOnTimePct =
@@ -59,7 +69,7 @@ export async function statsPlugin(app: FastifyInstance) {
     return {
       todayOnTimePct,
       arrivalsToday,
-      arrivalsOnRecord: Math.max(Number(estimate?.estimate ?? 0), arrivalsToday),
+      arrivalsOnRecord: Math.max(Number(estimate?.estimate ?? 0) - pendingToday, arrivalsToday),
     };
   });
 
@@ -68,7 +78,7 @@ export async function statsPlugin(app: FastifyInstance) {
     const since = localServiceDate(-range);
     const today = localServiceDate(0);
 
-    const [history, live, routeRows] = await Promise.all([
+    const [history, { rows: live }, routeRows] = await Promise.all([
       db
         .select()
         .from(routeDayStats)
@@ -121,7 +131,7 @@ export async function statsPlugin(app: FastifyInstance) {
       const [route] = await db.select().from(routes).where(eq(routes.routeId, req.params.id));
       if (!route) return reply.code(404).send({ error: "route not found" });
 
-      const [historyRows, live] = await Promise.all([
+      const [historyRows, { rows: live }] = await Promise.all([
         db
           .select()
           .from(routeDayStats)

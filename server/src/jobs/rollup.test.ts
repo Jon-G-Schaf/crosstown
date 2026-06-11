@@ -107,4 +107,51 @@ describe.runIf(available)("rollupServiceDate", () => {
     const rows = await db.select().from(routeDayStats);
     expect(rows.filter((r) => r.routeId === "A")).toHaveLength(3); // am_peak, pm_peak, all
   });
+
+  it("excludes forecasts and ghost rows", async () => {
+    const now = Date.now();
+    await db.insert(stopEvents).values([
+      // still a forecast: predicted arrival an hour from now
+      {
+        serviceDate: DATE,
+        tripId: "t9",
+        stopSequence: 1,
+        routeId: "C",
+        stopId: "S1",
+        delaySec: 0,
+        eventTime: new Date(now + 3600_000),
+        lastSeen: new Date(now),
+      },
+      // ghost: trip vanished from the feed an hour before this stop's
+      // predicted time; the prediction was never confirmed
+      {
+        serviceDate: DATE,
+        tripId: "t9",
+        stopSequence: 2,
+        routeId: "C",
+        stopId: "S2",
+        delaySec: 0,
+        eventTime: new Date(now - 3600_000),
+        lastSeen: new Date(now - 2 * 3600_000),
+      },
+      // observed: frozen within a poll of its event time
+      {
+        serviceDate: DATE,
+        tripId: "t9",
+        stopSequence: 3,
+        routeId: "C",
+        stopId: "S3",
+        delaySec: 30,
+        eventTime: new Date(now - 3600_000),
+        lastSeen: new Date(now - 3600_000 - 45_000),
+      },
+    ]);
+
+    await rollupServiceDate(DATE);
+
+    const rows = await db.select().from(routeDayStats);
+    const cAll = rows.find((r) => r.routeId === "C" && r.daypart === "all")!;
+    expect(cAll.observations).toBe(1);
+    expect(cAll.onTimePct).toBe(100);
+  });
 });

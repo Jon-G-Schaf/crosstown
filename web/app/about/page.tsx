@@ -36,7 +36,9 @@ export default function AboutPage() {
             not delays. So Crosstown computes the delay itself, by joining each prediction
             against the published schedule. The last prediction before the bus reaches a stop
             is taken as the observed arrival. It is not a perfect ground truth, but it is the
-            same number COTA&apos;s own arrival screens run on.
+            same number COTA&apos;s own arrival screens run on. Stops the bus has not reached
+            yet are never counted, and predictions left behind by trips that drop out of the
+            feed are discarded rather than treated as arrivals.
           </p>
 
           <h2 className="pt-4 text-lg font-semibold tracking-tight text-fog">

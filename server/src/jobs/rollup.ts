@@ -3,6 +3,7 @@ import { sql as dsql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import {
   DAYPART_CASE_SQL,
+  OBSERVED_EVENT_SQL,
   ON_TIME_EARLY_SEC,
   ON_TIME_LATE_SEC,
 } from "../lib/reliability.js";
@@ -12,6 +13,9 @@ const TZ = "America/New_York";
 // Per-route, per-daypart aggregate of one service date of stop_events,
 // with a coalesced 'all' bucket via grouping sets. Shared between the
 // nightly rollup (insert) and the live "today so far" stats endpoint.
+// Only observed rows count (see OBSERVED_EVENT_SQL): for finished days
+// this just drops ghosts from vanished trips; for today it also excludes
+// the forecasts for stops the bus hasn't reached yet.
 export function statsSelectSql(serviceDate: string) {
   return dsql`
     select
@@ -39,6 +43,7 @@ export function statsSelectSql(serviceDate: string) {
           extract(hour from event_time at time zone ${TZ})::int as h
         from stop_events
         where service_date = ${serviceDate}
+          and ${dsql.raw(OBSERVED_EVENT_SQL)}
       ) hours
     ) bucketed
     group by grouping sets ((route_id, service_date, daypart), (route_id, service_date))

@@ -27,13 +27,16 @@ function parseServiceDate(d: string | null | undefined): string | null {
   return `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`;
 }
 
-type Candidate = {
+export type Candidate = {
   serviceDate: string;
   tripId: string;
   stopSequence: number;
   routeId: string;
   stopId: string;
   eventEpoch: number;
+  // true when the feed gave a departure time only; the delay is then
+  // computed against the scheduled departure rather than arrival
+  isDeparture: boolean;
 };
 
 // COTA's TripUpdates carry predicted arrival times but no delay field, so
@@ -41,8 +44,8 @@ type Candidate = {
 // at "local noon minus 12h" (GTFS convention, DST-safe) and stop_times holds
 // seconds from that origin. Candidates go through a temp table so the
 // schedule join and delay math happen set-based in SQL, without holding
-// 360k stop_times in process memory.
-async function upsertCandidates(rows: Candidate[]) {
+// 360k stop_times in process memory. Exported for the integration test.
+export async function upsertCandidates(rows: Candidate[]) {
   const records = rows.map((r) => ({
     service_date: r.serviceDate,
     trip_id: r.tripId,
@@ -50,6 +53,7 @@ async function upsertCandidates(rows: Candidate[]) {
     route_id: r.routeId,
     stop_id: r.stopId,
     event_epoch: r.eventEpoch,
+    is_departure: r.isDeparture,
   }));
 
   await sql.begin(async (tx) => {
@@ -60,7 +64,8 @@ async function upsertCandidates(rows: Candidate[]) {
         stop_sequence int,
         route_id text,
         stop_id text,
-        event_epoch bigint
+        event_epoch bigint,
+        is_departure boolean
       ) on commit drop
     `;
     const chunkSize = 2000;
@@ -78,14 +83,16 @@ async function upsertCandidates(rows: Candidate[]) {
         u.stop_id,
         (u.event_epoch
           - (extract(epoch from ((u.service_date::timestamp + interval '12 hours') at time zone ${TZ}))::bigint - 43200)
-          - st.arrival_sec
+          - case when u.is_departure
+              then coalesce(st.departure_sec, st.arrival_sec)
+              else coalesce(st.arrival_sec, st.departure_sec) end
         )::int as delay_sec,
         to_timestamp(u.event_epoch),
         now()
       from tmp_stop_updates u
       join stop_times st
         on st.trip_id = u.trip_id and st.stop_sequence = u.stop_sequence
-      where st.arrival_sec is not null
+      where coalesce(st.arrival_sec, st.departure_sec) is not null
       on conflict (service_date, trip_id, stop_sequence) do update set
         delay_sec = excluded.delay_sec,
         event_time = excluded.event_time,
@@ -121,7 +128,8 @@ export async function pollTripUpdatesOnce(log: FastifyBaseLogger) {
       ) {
         continue;
       }
-      const eventEpoch = toEpochSec(stu.arrival?.time) ?? toEpochSec(stu.departure?.time);
+      const arrivalEpoch = toEpochSec(stu.arrival?.time);
+      const eventEpoch = arrivalEpoch ?? toEpochSec(stu.departure?.time);
       if (eventEpoch == null || stu.stopSequence == null || !stu.stopId) {
         skipped++;
         continue;
@@ -133,6 +141,7 @@ export async function pollTripUpdatesOnce(log: FastifyBaseLogger) {
         routeId,
         stopId: stu.stopId,
         eventEpoch,
+        isDeparture: arrivalEpoch == null,
       });
     }
   }

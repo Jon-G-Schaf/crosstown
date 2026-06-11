@@ -18,6 +18,20 @@ export function hourToDaypart(hour: number): Daypart {
   return "overnight";
 }
 
+// A stop_events row counts as an observation only once the bus has actually
+// passed the stop. TripUpdates rewrite a row's prediction every poll until
+// the stop drops out of the feed, so:
+//   - event_time > now()  ->  still a forecast, not a measurement
+//   - event_time far past last_seen  ->  the trip vanished from the feed
+//     (cancelled/reassigned) with this stop still ahead; the frozen
+//     prediction was never confirmed by a bus
+// A finalized row's last write happens within ~one poll of the actual
+// arrival, so a 5 minute allowance keeps real observations and drops ghosts.
+export const OBSERVED_EVENT_SQL = `
+  event_time <= now()
+  and event_time <= last_seen + interval '5 minutes'
+`;
+
 // SQL fragment equivalents, kept next to the JS so drift is obvious.
 export const DAYPART_CASE_SQL = `
   case
