@@ -5,8 +5,10 @@ import Link from "next/link";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { API_URL, type Vehicle, type VehiclesResponse } from "@/lib/api";
+import { brightenForDark } from "@/lib/colors";
 
 const COLUMBUS: [number, number] = [-82.9988, 39.9612];
+const MAP_STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
 // Feed updates every ~15s; animate each hop over slightly less so buses
 // settle before the next snapshot lands.
 const HOP_MS = 12_000;
@@ -34,6 +36,7 @@ export function LiveMap() {
   const [routes, setRoutes] = useState<RouteInfo[]>([]);
   const [filter, setFilter] = useState<string>("all");
   const [count, setCount] = useState<number | null>(null);
+  const [stalled, setStalled] = useState(false);
 
   useEffect(() => {
     filterRef.current = filter;
@@ -46,7 +49,7 @@ export function LiveMap() {
         if (!data) return;
         setRoutes(data.routes);
         for (const r of data.routes) {
-          if (r.color) routeColorsRef.current.set(r.routeId, `#${r.color}`);
+          routeColorsRef.current.set(r.routeId, brightenForDark(r.color));
         }
       })
       .catch(() => {});
@@ -57,7 +60,7 @@ export function LiveMap() {
 
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: "https://tiles.openfreemap.org/styles/positron",
+      style: MAP_STYLE,
       center: COLUMBUS,
       zoom: 11.3,
       attributionControl: { compact: true },
@@ -108,26 +111,39 @@ export function LiveMap() {
           to: [v.lon, v.lat],
           start: now,
           routeId: v.routeId,
-          color: (v.routeId && routeColorsRef.current.get(v.routeId)) || "#1d4ed8",
+          color: (v.routeId && routeColorsRef.current.get(v.routeId)) || "#7da2ff",
         });
       }
       for (const id of animsRef.current.keys()) {
         if (!seen.has(id)) animsRef.current.delete(id);
       }
       setCount(vehicles.length);
+      setStalled(false);
     };
 
     map.on("load", () => {
       map.addSource("vehicles", { type: "geojson", data: buildFrame(0) });
+      // Glow: a soft halo under each bus, then a bright core with dark stroke.
+      map.addLayer({
+        id: "vehicles-glow",
+        type: "circle",
+        source: "vehicles",
+        paint: {
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 9, 14, 18],
+          "circle-color": ["get", "color"],
+          "circle-opacity": 0.25,
+          "circle-blur": 1,
+        },
+      });
       map.addLayer({
         id: "vehicles",
         type: "circle",
         source: "vehicles",
         paint: {
-          "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 3.5, 14, 7],
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 3, 14, 6.5],
           "circle-color": ["get", "color"],
           "circle-stroke-width": 1.5,
-          "circle-stroke-color": "#ffffff",
+          "circle-stroke-color": "#0c0f14",
         },
       });
 
@@ -136,6 +152,7 @@ export function LiveMap() {
         const data: VehiclesResponse = JSON.parse(e.data);
         applySnapshot(data.vehicles);
       };
+      es.onerror = () => setStalled(true);
 
       const tick = (now: number) => {
         raf = requestAnimationFrame(tick);
@@ -154,25 +171,34 @@ export function LiveMap() {
     };
   }, []);
 
+  const live = count != null && !stalled;
+
   return (
-    <div className="relative h-dvh w-full">
+    <div className="relative h-dvh w-full bg-ink">
       {/* maplibre forces position:relative on this node, so size it directly */}
       <div ref={containerRef} className="h-full w-full" />
-      <div className="absolute left-4 top-4 w-64 rounded-lg bg-white/95 px-4 py-3 shadow-md backdrop-blur">
-        <h1 className="text-lg font-semibold tracking-tight">Crosstown</h1>
-        <p className="text-sm text-neutral-600">
-          {count == null ? "Connecting..." : `${count} COTA buses live`}
+
+      <div className="panel absolute left-4 top-4 w-72 px-5 py-4 max-sm:left-3 max-sm:right-3 max-sm:top-3 max-sm:w-auto">
+        <div className="flex items-baseline justify-between">
+          <h1 className="text-lg font-semibold tracking-tight text-fog">Crosstown</h1>
+          <span className="flex items-center gap-1.5 text-xs text-muted">
+            <span
+              className={`h-2 w-2 rounded-full ${
+                live ? "live-dot bg-ontime" : stalled ? "bg-late" : "bg-faint"
+              }`}
+            />
+            {live ? "live" : stalled ? "reconnecting" : "connecting"}
+          </span>
+        </div>
+
+        <p className="mt-1 font-mono text-sm text-muted">
+          {count == null ? "—" : `${count} buses on the road`}
         </p>
-        <Link
-          href="/routes"
-          className="mt-1 inline-block text-sm font-medium text-blue-700 hover:underline"
-        >
-          Reliability rankings &rarr;
-        </Link>
-        <label className="mt-3 block text-xs font-medium uppercase tracking-wide text-neutral-500">
+
+        <label className="mt-4 block text-[11px] font-medium uppercase tracking-label text-faint">
           Route
           <select
-            className="mt-1 w-full rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-sm text-neutral-900"
+            className="mt-1.5 w-full rounded-md border border-line bg-raised px-2 py-1.5 font-sans text-sm text-fog"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
           >
@@ -184,6 +210,15 @@ export function LiveMap() {
             ))}
           </select>
         </label>
+
+        <div className="mt-4 flex items-center justify-between border-t border-line pt-3 text-sm">
+          <Link href="/routes" className="link-quiet text-fog">
+            Reliability rankings
+          </Link>
+          <Link href="/about" className="text-muted transition-colors hover:text-fog">
+            About
+          </Link>
+        </div>
       </div>
     </div>
   );

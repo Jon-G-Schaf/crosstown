@@ -1,21 +1,33 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Archivo, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const archivo = Archivo({
+  variable: "--font-archivo",
   subsets: ["latin"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const plexMono = IBM_Plex_Mono({
+  variable: "--font-plex-mono",
+  weight: ["400", "500", "600"],
   subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
-  title: "Crosstown - live COTA bus map",
+  metadataBase: new URL("https://crosstown.jongschaf.com"),
+  title: {
+    default: "Crosstown - is your bus on time?",
+    template: "%s - Crosstown",
+  },
   description:
-    "Every COTA bus in Columbus on a live map, with reliability stats built from months of real arrival data.",
+    "Every COTA bus in Columbus on a live map, plus reliability stats built from a growing archive of real arrival data.",
+  openGraph: {
+    title: "Crosstown",
+    description: "Live COTA bus map and reliability stats for Columbus, Ohio.",
+    url: "https://crosstown.jongschaf.com",
+    siteName: "Crosstown",
+    type: "website",
+  },
 };
 
 export default function RootLayout({
@@ -24,11 +36,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">{children}</body>
+    <html lang="en" className={`${archivo.variable} ${plexMono.variable} h-full antialiased`}>
+      <body className="flex min-h-full flex-col font-sans">{children}</body>
     </html>
   );
 }

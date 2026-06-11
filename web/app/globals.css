@@ -1,26 +1,139 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ---------------------------------------------------------------------------
+   Crosstown design tokens: "night service".
+   A dark ops-room palette - deep ink base, glass panels, hairline rules.
+   Status colors do the talking; everything else stays quiet.
+--------------------------------------------------------------------------- */
+
+@theme {
+  /* Base */
+  --color-ink: #0c0f14;
+  --color-panel: #141923;
+  --color-raised: #1b2230;
+  --color-line: rgba(232, 236, 244, 0.08);
+
+  /* Text */
+  --color-fog: #e8ecf4;
+  --color-muted: #8b94a7;
+  --color-faint: #5b6372;
+
+  /* Status */
+  --color-ontime: #34d399;
+  --color-late: #fbbf24;
+  --color-verylate: #f87171;
+
+  /* Type */
+  --font-sans: var(--font-archivo), system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+
+  --tracking-label: 0.14em;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+html {
+  background-color: var(--color-ink);
+  scrollbar-color: #2a3344 var(--color-ink);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-ink);
+}
+::-webkit-scrollbar-thumb {
+  background: #232b3a;
+  border-radius: 6px;
+  border: 3px solid var(--color-ink);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2f3a4e;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-ink);
+  color: var(--color-fog);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: rgba(52, 211, 153, 0.25);
+  color: var(--color-fog);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-ontime);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+/* Glass panel: the one surface treatment. */
+.panel {
+  background: rgba(20, 25, 35, 0.82);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--color-line);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+}
+
+/* Live indicator: a dot that breathes while data is flowing. */
+@keyframes breathe {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.8); }
+}
+.live-dot {
+  animation: breathe 2.4s ease-in-out infinite;
+}
+
+/* List entrance: rows rise in, staggered via --reveal-delay. */
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.reveal {
+  opacity: 0;
+  animation: rise-in 0.5s cubic-bezier(0.21, 0.61, 0.35, 1) forwards;
+  animation-delay: var(--reveal-delay, 0ms);
+}
+
+/* Quiet links: hairline underline that draws in. */
+.link-quiet {
+  background-image: linear-gradient(90deg, var(--color-ontime), var(--color-ontime));
+  background-repeat: no-repeat;
+  background-position: 0 100%;
+  background-size: 0% 1px;
+  transition: background-size 250ms ease;
+  padding-bottom: 2px;
+}
+.link-quiet:hover,
+.link-quiet:focus-visible {
+  background-size: 100% 1px;
+}
+
+/* MapLibre chrome, tuned for the dark theme. */
+.maplibregl-ctrl-attrib {
+  background: rgba(12, 15, 20, 0.7) !important;
+  color: var(--color-faint) !important;
+}
+.maplibregl-ctrl-attrib a {
+  color: var(--color-muted) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .reveal {
+    opacity: 1;
+  }
 }
