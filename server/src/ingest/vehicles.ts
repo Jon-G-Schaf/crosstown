@@ -1,7 +1,7 @@
 import GtfsRealtimeBindings from "gtfs-realtime-bindings";
 import type { FastifyBaseLogger } from "fastify";
 import { lt } from "drizzle-orm";
-import { db } from "../db/index.js";
+import { db, sql } from "../db/index.js";
 import { vehiclePositions } from "../db/schema.js";
 
 const VEHICLE_FEED_URL =
@@ -46,6 +46,15 @@ function toMillis(ts: number | { toNumber(): number } | null | undefined): numbe
   return n > 0 ? n * 1000 : null;
 }
 
+// protobufjs puts field defaults on the prototype, so an absent bearing
+// reads as 0 ("due north") through plain property access. Only own
+// properties were actually on the wire; everything else is unknown.
+function wireNumber(obj: object, key: string): number | null {
+  return Object.prototype.hasOwnProperty.call(obj, key)
+    ? (obj as Record<string, number>)[key]!
+    : null;
+}
+
 export async function pollVehiclesOnce(log: FastifyBaseLogger) {
   const res = await fetch(VEHICLE_FEED_URL);
   if (!res.ok) throw new Error(`vehicle feed responded ${res.status}`);
@@ -69,8 +78,8 @@ export async function pollVehiclesOnce(log: FastifyBaseLogger) {
       routeId: v.trip?.routeId ?? null,
       lat: pos.latitude,
       lon: pos.longitude,
-      bearing: pos.bearing ?? null,
-      speed: pos.speed ?? null,
+      bearing: wireNumber(pos, "bearing"),
+      speed: wireNumber(pos, "speed"),
       ts: new Date(tsMs).toISOString(),
     };
     next.push(row);
@@ -99,13 +108,27 @@ export async function pruneVehiclePositions(log: FastifyBaseLogger) {
   log.info({ cutoff: cutoff.toISOString() }, "pruned vehicle positions");
 }
 
+// lastSeenTs is in-memory, so a restart would re-insert each vehicle's
+// current ping as a duplicate row. Seed it from the latest stored pings.
+async function seedLastSeen() {
+  const rows = await sql<{ vehicle_id: string; ts: Date }[]>`
+    select vehicle_id, max(ts) as ts
+    from vehicle_positions
+    where ts > now() - interval '2 hours'
+    group by vehicle_id
+  `;
+  for (const r of rows) lastSeenTs.set(r.vehicle_id, new Date(r.ts).getTime());
+}
+
 export function startVehicleIngest(log: FastifyBaseLogger) {
   const tick = () =>
     pollVehiclesOnce(log).catch((err) => log.warn({ err }, "vehicle poll failed"));
   const prune = () =>
     pruneVehiclePositions(log).catch((err) => log.warn({ err }, "prune failed"));
 
-  tick();
+  seedLastSeen()
+    .catch((err) => log.warn({ err }, "last-seen seed failed"))
+    .finally(tick);
   prune();
   const pollTimer = setInterval(tick, POLL_INTERVAL_MS);
   const pruneTimer = setInterval(prune, 3600 * 1000);
