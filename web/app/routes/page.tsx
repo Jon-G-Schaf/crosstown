@@ -5,6 +5,7 @@ import { brightenForDark, statusColor } from "@/lib/colors";
 import { CountUp } from "@/components/count-up";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteNav } from "@/components/site-nav";
+import { SystemPulseChart, type PulseHour } from "@/components/system-pulse";
 
 export const dynamic = "force-dynamic";
 
@@ -30,9 +31,10 @@ export default async function RoutesPage({
   const { range: rawRange } = await searchParams;
   const range = RANGES.find((r) => String(r) === rawRange) ?? 7;
 
-  const [res, sysRes] = await Promise.all([
+  const [res, sysRes, pulseRes] = await Promise.all([
     fetch(`${API_URL}/api/stats/routes?range=${range}`, { cache: "no-store" }),
     fetch(`${API_URL}/api/stats/system`, { cache: "no-store" }),
+    fetch(`${API_URL}/api/stats/pulse`, { cache: "no-store" }),
   ]);
   const data: { routes: RouteStat[] } = res.ok ? await res.json() : { routes: [] };
   const sys: {
@@ -40,6 +42,9 @@ export default async function RoutesPage({
     arrivalsToday: number;
     arrivalsOnRecord: number;
   } | null = sysRes.ok ? await sysRes.json() : null;
+  const pulse: { serviceDate: string; hours: PulseHour[] } | null = pulseRes.ok
+    ? await pulseRes.json()
+    : null;
 
   return (
     <>
@@ -86,6 +91,19 @@ export default async function RoutesPage({
                 <p className="mt-1 text-2xl text-fog">
                   <CountUp value={sys.arrivalsOnRecord} decimals={0} />
                 </p>
+              </div>
+            </div>
+          )}
+
+          {pulse && pulse.hours.length > 0 && (
+            <div className="panel mt-3 px-4 pb-2 pt-3.5">
+              <div className="flex items-baseline justify-between">
+                <p className="text-[10px] font-medium uppercase tracking-label text-faint">
+                  System pulse · on-time % by hour today
+                </p>
+              </div>
+              <div className="mt-2">
+                <SystemPulseChart hours={pulse.hours} />
               </div>
             </div>
           )}

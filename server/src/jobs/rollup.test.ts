@@ -29,7 +29,9 @@ if (!available) {
 
 process.env.DATABASE_URL = TEST_URL;
 const { db, sql, runMigrations } = available ? await import("../db/index.js") : ({} as never);
-const { rollupServiceDate } = available ? await import("./rollup.js") : ({} as never);
+const { pulseSelectSql, rollupServiceDate } = available
+  ? await import("./rollup.js")
+  : ({} as never);
 const { stopEvents, routeDayStats } = await import("../db/schema.js");
 
 afterAll(async () => {
@@ -153,5 +155,48 @@ describe.runIf(available)("rollupServiceDate", () => {
     const cAll = rows.find((r) => r.routeId === "C" && r.daypart === "all")!;
     expect(cAll.observations).toBe(1);
     expect(cAll.onTimePct).toBe(100);
+  });
+
+  it("buckets the system pulse by local hour, observed rows only", async () => {
+    // Own service date so the forecast/ghost seeds above cannot interfere.
+    const PULSE_DATE = "2026-06-08";
+    const pAt = (utcHourMinute: string) => new Date(`${PULSE_DATE}T${utcHourMinute}:00Z`);
+    const seed = (
+      stopSequence: number,
+      delaySec: number,
+      eventTime: Date,
+      lastSeen = eventTime,
+    ) => ({
+      serviceDate: PULSE_DATE,
+      tripId: "p1",
+      stopSequence,
+      routeId: "A",
+      stopId: "S1",
+      delaySec,
+      eventTime,
+      lastSeen,
+    });
+
+    await db.insert(stopEvents).values([
+      // local 08:xx (EDT = UTC-4): two on time, one late
+      seed(1, 0, pAt("12:00")),
+      seed(2, 100, pAt("12:30")),
+      seed(3, 400, pAt("12:59")),
+      // local 16:xx: one on time
+      seed(4, 60, pAt("20:15")),
+      // ghost in the 16:xx hour: must not count
+      seed(5, 0, pAt("20:30"), new Date(`${PULSE_DATE}T19:00:00Z`)),
+    ]);
+
+    const rows = await db.execute<{
+      hour: number;
+      observations: number;
+      on_time_pct: number;
+    }>(pulseSelectSql(PULSE_DATE));
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ hour: 8, observations: 3 });
+    expect(rows[0]!.on_time_pct).toBeCloseTo(66.67, 1);
+    expect(rows[1]).toMatchObject({ hour: 16, observations: 1, on_time_pct: 100 });
   });
 });

@@ -50,6 +50,25 @@ export function statsSelectSql(serviceDate: string) {
   `;
 }
 
+// System-wide on-time % by local hour for one service date, observed rows
+// only. Powers the "system pulse" chart on the rankings page.
+export function pulseSelectSql(serviceDate: string) {
+  return dsql`
+    select
+      extract(hour from event_time at time zone ${TZ})::int as hour,
+      count(*)::int as observations,
+      (100.0 * avg(
+        case when delay_sec >= ${ON_TIME_EARLY_SEC} and delay_sec <= ${ON_TIME_LATE_SEC}
+        then 1.0 else 0.0 end
+      ))::real as on_time_pct
+    from stop_events
+    where service_date = ${serviceDate}
+      and ${dsql.raw(OBSERVED_EVENT_SQL)}
+    group by 1
+    order by 1
+  `;
+}
+
 // Aggregates one service date of stop_events into route_day_stats.
 // Idempotent: safe to re-run for the same date.
 export async function rollupServiceDate(serviceDate: string) {

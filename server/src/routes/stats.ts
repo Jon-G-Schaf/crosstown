@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { and, asc, eq, gte, lt, sql as dsqlRaw } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { routeDayStats, routes } from "../db/schema.js";
-import { localServiceDate, statsSelectSql } from "../jobs/rollup.js";
+import { localServiceDate, pulseSelectSql, statsSelectSql } from "../jobs/rollup.js";
 import { mergeStats, OBSERVED_EVENT_SQL, type StatRow } from "../lib/reliability.js";
 
 const RANGES = new Set([7, 30, 90]);
@@ -11,6 +11,12 @@ const LIVE_CACHE_MS = 60_000;
 type AggRow = StatRow & { routeId: string; daypart: string; serviceDate?: string };
 
 let liveCache: { at: number; rows: AggRow[]; pendingToday: number } | null = null;
+
+type PulseBody = {
+  serviceDate: string;
+  hours: { hour: number; observations: number; onTimePct: number }[];
+};
+let pulseCache: { at: number; body: PulseBody } | null = null;
 
 // Today's stop_events aggregated on the fly; rollups only cover finished
 // days. pendingToday counts today's rows that are still forecasts (or
@@ -71,6 +77,27 @@ export async function statsPlugin(app: FastifyInstance) {
       arrivalsToday,
       arrivalsOnRecord: Math.max(Number(estimate?.estimate ?? 0) - pendingToday, arrivalsToday),
     };
+  });
+
+  // Today's system-wide on-time % by hour, for the pulse chart.
+  app.get("/api/stats/pulse", async () => {
+    if (pulseCache && Date.now() - pulseCache.at < LIVE_CACHE_MS) return pulseCache.body;
+    const today = localServiceDate(0);
+    const rows = await db.execute<{
+      hour: number;
+      observations: number;
+      on_time_pct: number;
+    }>(pulseSelectSql(today));
+    const body = {
+      serviceDate: today,
+      hours: rows.map((r) => ({
+        hour: r.hour,
+        observations: r.observations,
+        onTimePct: r.on_time_pct,
+      })),
+    };
+    pulseCache = { at: Date.now(), body };
+    return body;
   });
 
   app.get<{ Querystring: { range?: string } }>("/api/stats/routes", async (req) => {
