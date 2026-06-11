@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { and, asc, eq, gte, lt } from "drizzle-orm";
+import { and, asc, eq, gte, lt, sql as dsqlRaw } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { routeDayStats, routes } from "../db/schema.js";
 import { localServiceDate, statsSelectSql } from "../jobs/rollup.js";
@@ -42,6 +42,27 @@ function parseRange(raw: unknown): number {
 }
 
 export async function statsPlugin(app: FastifyInstance) {
+  // Headline numbers for the map panel and rankings hero. The on-record
+  // count is Postgres' row estimate; close enough for a counter and free.
+  app.get("/api/stats/system", async () => {
+    const live = await liveTodayStats();
+    const alls = live.filter((l) => l.daypart === "all");
+    const arrivalsToday = alls.reduce((sum, l) => sum + l.observations, 0);
+    const todayOnTimePct =
+      arrivalsToday > 0
+        ? alls.reduce((sum, l) => sum + l.onTimePct * l.observations, 0) / arrivalsToday
+        : null;
+    const [estimate] = await db.execute<{ estimate: string }>(
+      dsqlRaw`select greatest(reltuples, 0)::bigint::text as estimate
+              from pg_class where relname = 'stop_events'`,
+    );
+    return {
+      todayOnTimePct,
+      arrivalsToday,
+      arrivalsOnRecord: Math.max(Number(estimate?.estimate ?? 0), arrivalsToday),
+    };
+  });
+
   app.get<{ Querystring: { range?: string } }>("/api/stats/routes", async (req) => {
     const range = parseRange(req.query.range);
     const since = localServiceDate(-range);
