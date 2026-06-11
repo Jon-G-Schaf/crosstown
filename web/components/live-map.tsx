@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -29,6 +29,12 @@ const TIER_LABELS: [hex: string, label: string][] = [
   ["007B4B", "Crosstown"],
   ["402A16", "Seasonal"],
 ];
+
+const PANEL_PREF_EVENT = "ct-panel-change";
+function subscribePanelPref(cb: () => void) {
+  window.addEventListener(PANEL_PREF_EVENT, cb);
+  return () => window.removeEventListener(PANEL_PREF_EVENT, cb);
+}
 
 type SystemStats = {
   todayOnTimePct: number | null;
@@ -110,6 +116,18 @@ export function LiveMap() {
   const [count, setCount] = useState<number | null>(null);
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [stalled, setStalled] = useState(false);
+  // Panel starts expanded; the choice persists in localStorage so a
+  // returning visitor who shrank it (most useful on phones) keeps their
+  // map. useSyncExternalStore keeps SSR hydration clean.
+  const panelOpen = useSyncExternalStore(
+    subscribePanelPref,
+    () => localStorage.getItem("ct-panel") !== "min",
+    () => true,
+  );
+  const togglePanel = () => {
+    localStorage.setItem("ct-panel", panelOpen ? "min" : "open");
+    window.dispatchEvent(new Event(PANEL_PREF_EVENT));
+  };
 
   useEffect(() => {
     filterRef.current = filter;
@@ -515,7 +533,7 @@ export function LiveMap() {
       />
 
       {legend.length > 0 && (
-        <div className="panel pointer-events-none absolute bottom-4 left-4 flex items-center gap-4 px-3.5 py-2 max-sm:bottom-3 max-sm:left-3 max-sm:gap-3">
+        <div className="panel pointer-events-none absolute bottom-4 left-4 flex items-center gap-4 px-3.5 py-2 max-sm:bottom-3 max-sm:left-3 max-sm:right-3 max-sm:flex-wrap max-sm:gap-x-3 max-sm:gap-y-1">
           {legend.map((t) => (
             <span key={t.label} className="flex items-center gap-1.5">
               <span
@@ -530,25 +548,50 @@ export function LiveMap() {
         </div>
       )}
 
-      <div className="panel absolute left-4 top-4 w-76 px-5 py-4 max-sm:left-3 max-sm:right-3 max-sm:top-3 max-sm:w-auto">
-        <p className="text-[10px] font-medium uppercase tracking-label text-faint">
-          Columbus transit, measured
-        </p>
-        <div className="mt-1.5 flex items-center justify-between">
-          <h1 className="flex items-center gap-2.5 text-xl font-semibold tracking-tight text-fog">
+      <div
+        className={
+          panelOpen
+            ? "panel absolute left-4 top-4 w-76 px-5 py-4 max-sm:left-3 max-sm:right-3 max-sm:top-3 max-sm:w-auto"
+            : "panel absolute left-4 top-4 px-4 py-2.5 max-sm:left-3 max-sm:top-3"
+        }
+      >
+        {panelOpen && (
+          <p className="text-[10px] font-medium uppercase tracking-label text-faint">
+            Columbus transit, measured
+          </p>
+        )}
+        <div className={panelOpen ? "mt-1.5 flex items-center justify-between" : "flex items-center gap-3"}>
+          <h1
+            className={`flex items-center gap-2.5 font-semibold tracking-tight text-fog ${
+              panelOpen ? "text-xl" : "text-base"
+            }`}
+          >
             <RouteGlyph />
             Crosstown
           </h1>
-          <span className="flex items-center gap-1.5 font-mono text-[11px] text-muted">
-            <span
-              className={`h-2 w-2 rounded-full ${
-                live ? "live-dot bg-ontime" : stalled ? "bg-late" : "bg-faint"
-              }`}
-            />
-            {live ? "live" : stalled ? "reconnecting" : "connecting"}
+          <span className="flex items-center gap-2.5">
+            <span className="flex items-center gap-1.5 font-mono text-[11px] text-muted">
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  live ? "live-dot bg-ontime" : stalled ? "bg-late" : "bg-faint"
+                }`}
+              />
+              {panelOpen && (live ? "live" : stalled ? "reconnecting" : "connecting")}
+            </span>
+            <button
+              type="button"
+              onClick={togglePanel}
+              aria-expanded={panelOpen}
+              aria-label={panelOpen ? "Shrink panel" : "Expand panel"}
+              className="-mr-1 rounded-md px-1 font-mono text-sm leading-none text-faint transition-colors hover:text-fog"
+            >
+              {panelOpen ? "–" : "+"}
+            </button>
           </span>
         </div>
 
+        {panelOpen && (
+        <>
         <div className="mt-4 grid grid-cols-2 gap-3 border-t border-line pt-4">
           <div>
             <p className="text-[10px] font-medium uppercase tracking-label text-faint">
@@ -608,6 +651,8 @@ export function LiveMap() {
             About
           </Link>
         </div>
+        </>
+        )}
       </div>
     </div>
   );
