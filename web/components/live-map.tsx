@@ -19,27 +19,28 @@ const FRAME_MS = 33;
 const TRAIL_SAMPLE_MS = 900;
 const TRAIL_POINTS = 14;
 const FLOW_STEP_MS = 90;
-const FLOW_OPACITY = 0.4;
+const FLOW_OPACITY = 0.22;
 
 // Stepping line-dasharray through phase-shifted patterns reads as dashes
 // drifting along the line. GTFS shapes are stored in direction of travel,
-// so the drift shows which way each route flows.
-const FLOW_DASH_SEQ: number[][] = [
-  [0, 4, 3],
-  [0.5, 4, 2.5],
-  [1, 4, 2],
-  [1.5, 4, 1.5],
-  [2, 4, 1],
-  [2.5, 4, 0.5],
-  [3, 4, 0],
-  [0, 0.5, 3, 3.5],
-  [0, 1, 3, 3],
-  [0, 1.5, 3, 2.5],
-  [0, 2, 3, 2],
-  [0, 2.5, 3, 1.5],
-  [0, 3, 3, 1],
-  [0, 3.5, 3, 0.5],
-];
+// so the drift shows which way each route flows. Short dashes and long
+// gaps keep it a faint pulse of energy, not a dashed line.
+function buildFlowDashSeq(dash: number, gap: number, steps: number): number[][] {
+  const period = dash + gap;
+  const seq: number[][] = [];
+  for (let i = 0; i < steps; i++) {
+    const o = (i / steps) * period;
+    if (o + dash <= period) {
+      seq.push([0, o, dash, period - o - dash]);
+    } else {
+      // the dash wraps past the pattern start; split it across both ends
+      const head = o + dash - period;
+      seq.push([head, o - head, dash - head, 0]);
+    }
+  }
+  return seq;
+}
+const FLOW_DASH_SEQ = buildFlowDashSeq(2, 10, 24);
 
 type RouteInfo = { routeId: string; shortName: string; longName: string; color: string | null };
 
@@ -238,8 +239,11 @@ export function LiveMap() {
       zoom: intro ? 9.4 : 11.3,
       pitch: intro ? 50 : 0,
       bearing: intro ? -18 : 0,
-      attributionControl: { compact: true },
+      attributionControl: false,
     });
+    // Top-right corner: the default bottom-right spot collides with the
+    // arrival ticker.
+    map.addControl(new maplibregl.AttributionControl({ compact: true }), "top-right");
     mapRef.current = map;
 
     // debug/test handle (used by headless verification)
@@ -374,7 +378,7 @@ export function LiveMap() {
           paint: {
             "line-color": ["get", "color"],
             "line-opacity": intro ? 0 : FLOW_OPACITY,
-            "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1.4, 14, 2.6],
+            "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1, 14, 2.2],
             "line-dasharray": FLOW_DASH_SEQ[0],
           },
         });
