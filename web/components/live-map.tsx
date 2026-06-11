@@ -7,6 +7,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { API_URL, type Vehicle, type VehiclesResponse } from "@/lib/api";
 import { brightenForDark, statusColor } from "@/lib/colors";
 import { MAP_STYLE, applyInkTint } from "@/lib/map-style";
+import { ArrivalTicker } from "./arrival-ticker";
 import { CountUp } from "./count-up";
 import { RouteGlyph } from "./wordmark";
 
@@ -17,6 +18,28 @@ const HOP_MS = 12_000;
 const FRAME_MS = 33;
 const TRAIL_SAMPLE_MS = 900;
 const TRAIL_POINTS = 14;
+const FLOW_STEP_MS = 90;
+const FLOW_OPACITY = 0.4;
+
+// Stepping line-dasharray through phase-shifted patterns reads as dashes
+// drifting along the line. GTFS shapes are stored in direction of travel,
+// so the drift shows which way each route flows.
+const FLOW_DASH_SEQ: number[][] = [
+  [0, 4, 3],
+  [0.5, 4, 2.5],
+  [1, 4, 2],
+  [1.5, 4, 1.5],
+  [2, 4, 1],
+  [2.5, 4, 0.5],
+  [3, 4, 0],
+  [0, 0.5, 3, 3.5],
+  [0, 1, 3, 3],
+  [0, 1.5, 3, 2.5],
+  [0, 2, 3, 2],
+  [0, 2.5, 3, 1.5],
+  [0, 3, 3, 1],
+  [0, 3.5, 3, 0.5],
+];
 
 type RouteInfo = { routeId: string; shortName: string; longName: string; color: string | null };
 
@@ -104,6 +127,9 @@ function arrowImage(color: string): ImageData {
 
 export function LiveMap() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const hoverChipRef = useRef<HTMLDivElement>(null);
+  const hoverNumRef = useRef<HTMLSpanElement>(null);
+  const hoverNameRef = useRef<HTMLSpanElement>(null);
   const animsRef = useRef(new Map<string, Anim>());
   const trailsRef = useRef(new Map<string, [number, number][]>());
   const routesRef = useRef(new Map<string, RouteInfo>());
@@ -137,6 +163,14 @@ export function LiveMap() {
     map.setFilter("network-active", ["==", ["get", "routeId"], filter]);
     map.setFilter("network-active-glow", ["==", ["get", "routeId"], filter]);
     map.setPaintProperty("network-base", "line-opacity", filter === "all" ? 0.14 : 0.05);
+    // Flow pulses follow the selection: everywhere when browsing, only the
+    // chosen strand when one is lit.
+    if (map.getLayer("network-flow")) {
+      map.setFilter(
+        "network-flow",
+        filter === "all" ? null : ["==", ["get", "routeId"], filter],
+      );
+    }
 
     // Camera follows the selection: frame the route, or return to the city.
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -192,11 +226,18 @@ export function LiveMap() {
   useEffect(() => {
     if (!containerRef.current) return;
 
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // The boot-up: camera starts pulled back and tilted, then settles onto
+    // the city while the strands and buses fade up underneath it.
+    const intro = !reduced;
+
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: MAP_STYLE,
       center: COLUMBUS,
-      zoom: 11.3,
+      zoom: intro ? 9.4 : 11.3,
+      pitch: intro ? 50 : 0,
+      bearing: intro ? -18 : 0,
       attributionControl: { compact: true },
     });
     mapRef.current = map;
@@ -208,6 +249,8 @@ export function LiveMap() {
     let raf = 0;
     let lastFrame = 0;
     let lastTrailSample = 0;
+    let introTimer: number | undefined;
+    let flowDashIdx = 0;
 
     const empty = { type: "FeatureCollection", features: [] } as GeoJSON.FeatureCollection;
 
@@ -315,10 +358,27 @@ export function LiveMap() {
         layout: { "line-cap": "round", "line-join": "round" },
         paint: {
           "line-color": ["get", "color"],
-          "line-opacity": 0.14,
+          "line-opacity": intro ? 0 : 0.14,
           "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1, 14, 2.2],
         },
       });
+      // Pulses of light drifting along every strand in the direction of
+      // travel; the dasharray is stepped from the render loop. Skipped
+      // entirely under reduced motion (static dashes would just look torn).
+      if (!reduced) {
+        map.addLayer({
+          id: "network-flow",
+          type: "line",
+          source: "network",
+          layout: { "line-cap": "round", "line-join": "round" },
+          paint: {
+            "line-color": ["get", "color"],
+            "line-opacity": intro ? 0 : FLOW_OPACITY,
+            "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1.4, 14, 2.6],
+            "line-dasharray": FLOW_DASH_SEQ[0],
+          },
+        });
+      }
       map.addLayer({
         id: "network-active-glow",
         type: "line",
@@ -342,6 +402,20 @@ export function LiveMap() {
           "line-color": ["get", "color"],
           "line-opacity": 0.85,
           "line-width": 2.4,
+        },
+      });
+
+      // The hovered strand brightens before you commit to a click.
+      map.addLayer({
+        id: "network-hover",
+        type: "line",
+        source: "network",
+        filter: ["==", ["get", "routeId"], "__none__"],
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-color": ["get", "color"],
+          "line-opacity": 0.55,
+          "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1.8, 14, 3],
         },
       });
 
@@ -390,7 +464,7 @@ export function LiveMap() {
         paint: {
           "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 9, 14, 18],
           "circle-color": ["get", "color"],
-          "circle-opacity": 0.25,
+          "circle-opacity": intro ? 0 : 0.25,
           "circle-blur": 1,
         },
       });
@@ -404,8 +478,10 @@ export function LiveMap() {
         paint: {
           "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 3, 14, 6.5],
           "circle-color": ["get", "color"],
+          "circle-opacity": intro ? 0 : 1,
           "circle-stroke-width": 1.5,
           "circle-stroke-color": "#0c0f14",
+          "circle-stroke-opacity": intro ? 0 : 1,
         },
       });
       map.addLayer({
@@ -421,7 +497,46 @@ export function LiveMap() {
           "icon-allow-overlap": true,
           "icon-ignore-placement": true,
         },
+        paint: {
+          "icon-opacity": intro ? 0 : 1,
+        },
       });
+
+      // Run the boot-up: fly the camera home while strands draw up, flow
+      // pulses join, and the fleet fades in last. Transitions are restored
+      // to snappy once the curtain is fully up, so a route selection right
+      // after load does not dim the network in slow motion.
+      if (intro) {
+        map.flyTo({ center: COLUMBUS, zoom: 11.3, pitch: 0, bearing: 0, duration: 2800 });
+        const fadeIn = (
+          layer: string,
+          prop: string,
+          value: number,
+          duration: number,
+          delay: number,
+        ) => {
+          map.setPaintProperty(layer, `${prop}-transition`, { duration, delay });
+          map.setPaintProperty(layer, prop, value);
+        };
+        fadeIn("network-base", "line-opacity", 0.14, 1800, 400);
+        fadeIn("network-flow", "line-opacity", FLOW_OPACITY, 1600, 1300);
+        fadeIn("vehicles-glow", "circle-opacity", 0.25, 900, 1700);
+        fadeIn("vehicles", "circle-opacity", 1, 900, 1700);
+        fadeIn("vehicles", "circle-stroke-opacity", 1, 900, 1700);
+        fadeIn("vehicles-arrow", "icon-opacity", 1, 900, 1700);
+        introTimer = window.setTimeout(() => {
+          for (const [layer, prop] of [
+            ["network-base", "line-opacity"],
+            ["network-flow", "line-opacity"],
+            ["vehicles-glow", "circle-opacity"],
+            ["vehicles", "circle-opacity"],
+            ["vehicles", "circle-stroke-opacity"],
+            ["vehicles-arrow", "icon-opacity"],
+          ]) {
+            map.setPaintProperty(layer, `${prop}-transition`, { duration: 300, delay: 0 });
+          }
+        }, 3000);
+      }
 
       // Tap a bus for its vitals.
       const onVehicleClick = (
@@ -476,6 +591,34 @@ export function LiveMap() {
         map.getCanvas().style.cursor = "";
       });
 
+      // Hover spotlight: the strand under the cursor brightens and a chip
+      // names it. The chip follows the pointer via direct style writes (no
+      // React state at mousemove frequency). Fine pointers only.
+      if (window.matchMedia("(pointer: fine)").matches) {
+        let hoveredRoute: string | null = null;
+        map.on("mousemove", "network-hit", (e) => {
+          const routeId = (e.features?.[0]?.properties as { routeId?: string })?.routeId;
+          if (!routeId) return;
+          if (routeId !== hoveredRoute) {
+            hoveredRoute = routeId;
+            map.setFilter("network-hover", ["==", ["get", "routeId"], routeId]);
+            const route = routesRef.current.get(routeId);
+            if (hoverNumRef.current) hoverNumRef.current.textContent = route?.shortName ?? "";
+            if (hoverNameRef.current) hoverNameRef.current.textContent = route?.longName ?? "";
+          }
+          const chip = hoverChipRef.current;
+          if (chip) {
+            chip.style.transform = `translate(${e.point.x + 14}px, ${e.point.y + 16}px)`;
+            chip.style.opacity = "1";
+          }
+        });
+        map.on("mouseleave", "network-hit", () => {
+          hoveredRoute = null;
+          map.setFilter("network-hover", ["==", ["get", "routeId"], "__none__"]);
+          if (hoverChipRef.current) hoverChipRef.current.style.opacity = "0";
+        });
+      }
+
       es = new EventSource(`${API_URL}/api/stream/vehicles`);
       es.onmessage = (e) => {
         const data: VehiclesResponse = JSON.parse(e.data);
@@ -488,6 +631,13 @@ export function LiveMap() {
         if (now - lastFrame < FRAME_MS) return;
         lastFrame = now;
         map.getSource<maplibregl.GeoJSONSource>("vehicles")?.setData(buildVehicleFrame(now));
+        if (!reduced) {
+          const idx = Math.floor(now / FLOW_STEP_MS) % FLOW_DASH_SEQ.length;
+          if (idx !== flowDashIdx) {
+            flowDashIdx = idx;
+            map.setPaintProperty("network-flow", "line-dasharray", FLOW_DASH_SEQ[idx]);
+          }
+        }
         if (now - lastTrailSample >= TRAIL_SAMPLE_MS) {
           lastTrailSample = now;
           sampleTrails(now);
@@ -499,6 +649,7 @@ export function LiveMap() {
 
     return () => {
       cancelAnimationFrame(raf);
+      window.clearTimeout(introTimer);
       es?.close();
       map.remove();
       mapRef.current = null;
@@ -531,6 +682,18 @@ export function LiveMap() {
             "radial-gradient(ellipse 95% 95% at 50% 45%, transparent 62%, rgba(12,15,20,0.6) 100%)",
         }}
       />
+
+      {/* hover spotlight chip; position and visibility are driven
+          imperatively from the map's mousemove handler */}
+      <div
+        ref={hoverChipRef}
+        className="panel pointer-events-none absolute left-0 top-0 z-10 flex items-baseline gap-2 px-3 py-1.5 opacity-0 transition-opacity duration-150"
+      >
+        <span ref={hoverNumRef} className="font-mono text-xs font-semibold text-fog" />
+        <span ref={hoverNameRef} className="text-xs text-muted" />
+      </div>
+
+      <ArrivalTicker />
 
       {legend.length > 0 && (
         <div className="panel pointer-events-none absolute bottom-4 left-4 flex items-center gap-4 px-3.5 py-2 max-sm:bottom-3 max-sm:left-3 max-sm:right-3 max-sm:flex-wrap max-sm:gap-x-3 max-sm:gap-y-1">
@@ -583,7 +746,7 @@ export function LiveMap() {
               onClick={togglePanel}
               aria-expanded={panelOpen}
               aria-label={panelOpen ? "Shrink panel" : "Expand panel"}
-              className="-mr-1 rounded-md px-1 font-mono text-sm leading-none text-faint transition-colors hover:text-fog"
+              className="-my-1 -mr-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-line bg-raised font-mono text-base leading-none text-fog transition-colors hover:border-fog/30"
             >
               {panelOpen ? "–" : "+"}
             </button>

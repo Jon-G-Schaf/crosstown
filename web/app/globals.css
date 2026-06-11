@@ -88,6 +88,19 @@ body {
   animation: breathe 2.4s ease-in-out infinite;
 }
 
+/* Arrival ticker: a slow conveyor of the latest observed arrivals. The
+   track holds two copies of the content; sliding one copy-width and looping
+   reads as endless. */
+@keyframes ticker-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.ticker-track {
+  display: flex;
+  width: max-content;
+  animation: ticker-scroll var(--ticker-duration, 45s) linear infinite;
+}
+
 /* List entrance: rows rise in, staggered via --reveal-delay. */
 @keyframes rise-in {
   from { opacity: 0; transform: translateY(8px); }

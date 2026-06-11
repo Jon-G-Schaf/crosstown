@@ -16,3 +16,15 @@ export type VehiclesResponse = {
   vehicles: Vehicle[];
   updatedAt: string | null;
 };
+
+export type RecentArrival = {
+  routeId: string;
+  shortName: string;
+  stopName: string;
+  delaySec: number;
+  eventEpoch: number;
+};
+
+export type ArrivalsResponse = {
+  arrivals: RecentArrival[];
+};
