@@ -6,3 +6,5 @@ dist/
 .pgdata/
 *.log
 *.tsbuildinfo
+CLAUDE.local.md
+.claude/
