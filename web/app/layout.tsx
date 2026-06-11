@@ -16,7 +16,7 @@ const plexMono = IBM_Plex_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL("https://crosstown.jongschaf.com"),
   title: {
-    default: "Crosstown - is your bus on time?",
+    default: "Crosstown - Columbus bus reliability, measured",
     template: "%s - Crosstown",
   },
   description:

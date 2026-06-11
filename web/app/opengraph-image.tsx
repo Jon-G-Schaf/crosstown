@@ -72,7 +72,7 @@ export default function OgImage() {
           </div>
         </div>
         <div style={{ marginTop: 18, fontSize: 32, color: "#8b94a7" }}>
-          Is your bus on time? Columbus, live.
+          Every COTA bus live. Every arrival on the record.
         </div>
       </div>
     ),
