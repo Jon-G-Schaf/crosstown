@@ -66,6 +66,12 @@ type SystemStats = {
   arrivalsOnRecord: number;
 };
 
+type PulseHour = { hour: number; observations: number; onTimePct: number };
+
+// Hours sort by service-day position (4am first, overnight last), matching
+// the pulse chart on the rankings page.
+const servicePos = (hour: number) => (hour - 4 + 24) % 24;
+
 type Anim = {
   from: [number, number];
   to: [number, number];
@@ -142,6 +148,7 @@ export function LiveMap() {
   const [filter, setFilter] = useState<string>("all");
   const [count, setCount] = useState<number | null>(null);
   const [stats, setStats] = useState<SystemStats | null>(null);
+  const [pulse, setPulse] = useState<PulseHour[]>([]);
   const [stalled, setStalled] = useState(false);
   // Panel starts expanded; the choice persists in localStorage so a
   // returning visitor who shrank it (most useful on phones) keeps their
@@ -214,11 +221,16 @@ export function LiveMap() {
       })
       .catch(() => {});
 
-    const loadStats = () =>
+    const loadStats = () => {
       fetch(`${API_URL}/api/stats/system`)
         .then((res) => (res.ok ? res.json() : null))
         .then((data: SystemStats | null) => data && setStats(data))
         .catch(() => {});
+      fetch(`${API_URL}/api/stats/pulse`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data: { hours: PulseHour[] } | null) => data && setPulse(data.hours))
+        .catch(() => {});
+    };
     loadStats();
     const statsTimer = setInterval(loadStats, 60_000);
     return () => clearInterval(statsTimer);
@@ -778,9 +790,14 @@ export function LiveMap() {
             </p>
             <p
               className="mt-0.5 text-2xl"
-              style={{
-                color: stats?.todayOnTimePct != null ? statusColor(stats.todayOnTimePct) : undefined,
-              }}
+              style={
+                stats?.todayOnTimePct != null
+                  ? {
+                      color: statusColor(stats.todayOnTimePct),
+                      textShadow: `0 0 18px ${statusColor(stats.todayOnTimePct)}59`,
+                    }
+                  : undefined
+              }
             >
               {stats?.todayOnTimePct == null ? (
                 <span className="font-mono text-fog">—</span>
@@ -788,13 +805,34 @@ export function LiveMap() {
                 <CountUp value={stats.todayOnTimePct} suffix="%" />
               )}
             </p>
+            {pulse.length > 1 && (
+              <span
+                aria-hidden="true"
+                className="mt-1.5 flex h-3.5 items-end gap-[2px]"
+                title="On-time % by hour today"
+              >
+                {[...pulse]
+                  .sort((a, b) => servicePos(a.hour) - servicePos(b.hour))
+                  .map((h) => (
+                    <span
+                      key={h.hour}
+                      className="w-[3px] rounded-full"
+                      style={{
+                        height: `${Math.max(18, h.onTimePct)}%`,
+                        backgroundColor: statusColor(h.onTimePct),
+                        opacity: 0.85,
+                      }}
+                    />
+                  ))}
+              </span>
+            )}
           </div>
         </div>
 
         <label className="mt-4 block text-[10px] font-medium uppercase tracking-label text-faint">
           Route
           <select
-            className="mt-1.5 w-full rounded-md border border-line bg-raised px-2 py-1.5 font-sans text-sm text-fog"
+            className="select-quiet mt-1.5 w-full rounded-md border border-line bg-raised py-1.5 pl-2.5 pr-8 font-sans text-sm text-fog transition-colors hover:border-fog/20"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
           >

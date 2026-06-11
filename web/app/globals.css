@@ -126,6 +126,15 @@ body {
   background-size: 100% 1px;
 }
 
+/* Quiet select: native control, considered chrome. */
+.select-quiet {
+  appearance: none;
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="%238b94a7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>');
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px;
+}
+
 /* MapLibre chrome, tuned for the dark theme. */
 .maplibregl-ctrl-attrib {
   background: rgba(12, 15, 20, 0.7) !important;

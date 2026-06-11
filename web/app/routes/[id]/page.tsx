@@ -85,12 +85,26 @@ export default async function RouteDetailPage({
           </div>
         )}
 
-        <section className="mt-6 mb-10 grid grid-cols-3 gap-3 max-sm:grid-cols-1">
-          <div className="panel px-4 py-3.5">
+        <section className="panel relative mt-6 mb-10 grid grid-cols-3 divide-x divide-line overflow-hidden max-sm:grid-cols-1 max-sm:divide-x-0 max-sm:divide-y">
+          {overallPct != null && (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute -left-12 -top-16 h-48 w-48 rounded-full blur-3xl"
+              style={{ backgroundColor: statusColor(overallPct), opacity: 0.08 }}
+            />
+          )}
+          <div className="relative px-5 py-4">
             <p className="text-[10px] font-medium uppercase tracking-label text-faint">On time</p>
             <p
-              className="mt-1 text-2xl"
-              style={{ color: overallPct != null ? statusColor(overallPct) : undefined }}
+              className="mt-1 text-3xl tracking-tight"
+              style={
+                overallPct != null
+                  ? {
+                      color: statusColor(overallPct),
+                      textShadow: `0 0 22px ${statusColor(overallPct)}59`,
+                    }
+                  : undefined
+              }
             >
               {overallPct == null ? (
                 <span className="font-mono text-fog">—</span>
@@ -99,19 +113,19 @@ export default async function RouteDetailPage({
               )}
             </p>
           </div>
-          <div className="panel px-4 py-3.5">
+          <div className="relative px-5 py-4">
             <p className="text-[10px] font-medium uppercase tracking-label text-faint">
               Avg delay
             </p>
-            <p className="mt-1 font-mono text-2xl text-fog">
+            <p className="mt-1 font-mono text-3xl tracking-tight text-fog">
               {overallDelay == null ? "—" : fmtDelay(overallDelay)}
             </p>
           </div>
-          <div className="panel px-4 py-3.5">
+          <div className="relative px-5 py-4">
             <p className="text-[10px] font-medium uppercase tracking-label text-faint">
               Arrivals
             </p>
-            <p className="mt-1 text-2xl text-fog">
+            <p className="mt-1 text-3xl tracking-tight text-fog">
               <CountUp value={total.obs} decimals={0} />
             </p>
           </div>
@@ -162,7 +176,12 @@ export default async function RouteDetailPage({
                     <td className="py-2.5 text-right text-muted">
                       {d.observations.toLocaleString()}
                     </td>
-                    <td className="py-2.5 text-right text-fog">{fmtPct(d.onTimePct)}</td>
+                    <td
+                      className="py-2.5 text-right"
+                      style={{ color: statusColor(d.onTimePct) }}
+                    >
+                      {fmtPct(d.onTimePct)}
+                    </td>
                     <td className="py-2.5 text-right text-muted">{fmtDelay(d.avgDelaySec)}</td>
                   </tr>
                 ))}

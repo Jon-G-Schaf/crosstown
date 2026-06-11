@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { API_URL } from "@/lib/api";
-import { fmtDelay, fmtPct } from "@/lib/format";
+import { fmtDelay, fmtPct, DAYPART_LABELS, DAYPART_ORDER } from "@/lib/format";
 import { brightenForDark, statusColor } from "@/lib/colors";
 import { CountUp } from "@/components/count-up";
 import { SiteFooter } from "@/components/site-footer";
@@ -11,6 +11,8 @@ export const dynamic = "force-dynamic";
 
 export const metadata = { title: "Route reliability" };
 
+type DaypartStat = { daypart: string; observations: number; onTimePct: number };
+
 type RouteStat = {
   routeId: string;
   shortName: string;
@@ -19,9 +21,36 @@ type RouteStat = {
   observations: number;
   onTimePct: number;
   avgDelaySec: number;
+  dayparts?: DaypartStat[];
 };
 
 const RANGES = [7, 30, 90] as const;
+
+// Five cells, one per daypart, colored by that period's on-time rate: a
+// route's whole day legible at a glance, right in the ranking row.
+function DaypartStrip({ dayparts }: { dayparts?: DaypartStat[] }) {
+  if (!dayparts || dayparts.length === 0) return null;
+  const by = new Map(dayparts.map((d) => [d.daypart, d]));
+  return (
+    <span className="flex gap-[3px] max-md:hidden">
+      {DAYPART_ORDER.map((dp) => {
+        const d = by.get(dp);
+        return (
+          <span
+            key={dp}
+            className={`h-5 w-2.5 rounded-[3px] ${d ? "" : "bg-raised"}`}
+            title={
+              d
+                ? `${DAYPART_LABELS[dp]}: ${fmtPct(d.onTimePct)} of ${d.observations.toLocaleString()}`
+                : `${DAYPART_LABELS[dp]}: no data`
+            }
+            style={d ? { backgroundColor: statusColor(d.onTimePct), opacity: 0.8 } : undefined}
+          />
+        );
+      })}
+    </span>
+  );
+}
 
 export default async function RoutesPage({
   searchParams,
@@ -46,6 +75,8 @@ export default async function RoutesPage({
     ? await pulseRes.json()
     : null;
 
+  const sysColor = sys?.todayOnTimePct != null ? statusColor(sys.todayOnTimePct) : null;
+
   return (
     <>
       <SiteNav active="routes" />
@@ -58,64 +89,72 @@ export default async function RoutesPage({
           </p>
 
           {sys && (
-            <div className="mt-6 grid grid-cols-3 gap-3 max-sm:grid-cols-1">
-              <div className="panel px-4 py-3.5">
-                <p className="text-[10px] font-medium uppercase tracking-label text-faint">
-                  System on time today
-                </p>
-                <p
-                  className="mt-1 text-2xl"
-                  style={{
-                    color: sys.todayOnTimePct != null ? statusColor(sys.todayOnTimePct) : undefined,
-                  }}
-                >
-                  {sys.todayOnTimePct == null ? (
-                    <span className="font-mono text-fog">—</span>
-                  ) : (
-                    <CountUp value={sys.todayOnTimePct} suffix="%" />
-                  )}
-                </p>
-              </div>
-              <div className="panel px-4 py-3.5">
-                <p className="text-[10px] font-medium uppercase tracking-label text-faint">
-                  Arrivals today
-                </p>
-                <p className="mt-1 text-2xl text-fog">
-                  <CountUp value={sys.arrivalsToday} decimals={0} />
-                </p>
-              </div>
-              <div className="panel px-4 py-3.5">
-                <p className="text-[10px] font-medium uppercase tracking-label text-faint">
-                  Arrivals on record
-                </p>
-                <p className="mt-1 text-2xl text-fog">
-                  <CountUp value={sys.arrivalsOnRecord} decimals={0} />
-                </p>
+            <div className="panel relative mt-6 overflow-hidden px-6 py-5">
+              {/* a status-colored wash; the day's mood leaks into the room */}
+              {sysColor && (
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute -left-16 -top-20 h-64 w-64 rounded-full blur-3xl"
+                  style={{ backgroundColor: sysColor, opacity: 0.07 }}
+                />
+              )}
+              <div className="relative flex items-end gap-10 max-md:flex-col max-md:items-stretch max-md:gap-6">
+                <div className="shrink-0">
+                  <p className="text-[10px] font-medium uppercase tracking-label text-faint">
+                    System on time today
+                  </p>
+                  <p
+                    className="mt-1.5 text-6xl tracking-tight"
+                    style={
+                      sysColor
+                        ? { color: sysColor, textShadow: `0 0 28px ${sysColor}59` }
+                        : undefined
+                    }
+                  >
+                    {sys.todayOnTimePct == null ? (
+                      <span className="font-mono text-fog">—</span>
+                    ) : (
+                      <CountUp value={sys.todayOnTimePct} suffix="%" />
+                    )}
+                  </p>
+                  <div className="mt-5 flex gap-8">
+                    <div>
+                      <p className="text-[10px] font-medium uppercase tracking-label text-faint">
+                        Arrivals today
+                      </p>
+                      <p className="mt-0.5 font-mono text-lg text-fog">
+                        <CountUp value={sys.arrivalsToday} decimals={0} />
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-medium uppercase tracking-label text-faint">
+                        On record
+                      </p>
+                      <p className="mt-0.5 font-mono text-lg text-fog">
+                        <CountUp value={sys.arrivalsOnRecord} decimals={0} />
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                {pulse && pulse.hours.length > 0 && (
+                  <div className="min-w-0 flex-1">
+                    <p className="mb-1 text-right text-[10px] font-medium uppercase tracking-label text-faint max-md:text-left">
+                      On-time % by hour
+                    </p>
+                    <SystemPulseChart hours={pulse.hours} />
+                  </div>
+                )}
               </div>
             </div>
           )}
 
-          {pulse && pulse.hours.length > 0 && (
-            <div className="panel mt-3 px-4 pb-2 pt-3.5">
-              <div className="flex items-baseline justify-between">
-                <p className="text-[10px] font-medium uppercase tracking-label text-faint">
-                  System pulse · on-time % by hour today
-                </p>
-              </div>
-              <div className="mt-2">
-                <SystemPulseChart hours={pulse.hours} />
-              </div>
-            </div>
-          )}
-          <nav className="mt-5 flex gap-2">
+          <nav className="mt-5 inline-flex rounded-full border border-line bg-panel p-1">
             {RANGES.map((r) => (
               <Link
                 key={r}
                 href={`/routes?range=${r}`}
                 className={`rounded-full px-3.5 py-1 font-mono text-xs transition-colors ${
-                  r === range
-                    ? "bg-fog text-ink"
-                    : "bg-raised text-muted hover:text-fog"
+                  r === range ? "bg-fog text-ink" : "text-muted hover:text-fog"
                 }`}
               >
                 {r}d
@@ -143,7 +182,9 @@ export default async function RoutesPage({
                   href={`/routes/${r.routeId}`}
                   className="group flex items-center gap-4 px-2 py-3.5 transition-colors hover:bg-panel"
                 >
-                  <span className="w-6 text-right font-mono text-xs text-faint">{i + 1}</span>
+                  <span className="w-7 text-right font-mono text-xs text-faint">
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
                   <span
                     className="inline-flex h-8 w-13 min-w-13 items-center justify-center rounded-md font-mono text-sm font-semibold text-ink"
                     style={{ backgroundColor: brightenForDark(r.color) }}
@@ -158,6 +199,7 @@ export default async function RoutesPage({
                       {r.observations.toLocaleString()} arrivals · avg {fmtDelay(r.avgDelaySec)}
                     </span>
                   </span>
+                  <DaypartStrip dayparts={r.dayparts} />
                   <span className="flex w-36 items-center gap-3 max-sm:w-24">
                     <span className="h-1 flex-1 overflow-hidden rounded-full bg-raised">
                       <span
@@ -165,6 +207,7 @@ export default async function RoutesPage({
                         style={{
                           width: `${Math.max(2, r.onTimePct)}%`,
                           backgroundColor: statusColor(r.onTimePct),
+                          boxShadow: `0 0 8px ${statusColor(r.onTimePct)}66`,
                         }}
                       />
                     </span>

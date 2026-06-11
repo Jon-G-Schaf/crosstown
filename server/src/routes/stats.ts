@@ -110,24 +110,30 @@ export async function statsPlugin(app: FastifyInstance) {
         .select()
         .from(routeDayStats)
         .where(
-          and(
-            eq(routeDayStats.daypart, "all"),
-            gte(routeDayStats.serviceDate, since),
-            lt(routeDayStats.serviceDate, today),
-          ),
+          and(gte(routeDayStats.serviceDate, since), lt(routeDayStats.serviceDate, today)),
         ),
       liveTodayStats(),
       db.select().from(routes),
     ]);
 
+    // 'all' rows drive the ranking; the daypart rows ride along so the list
+    // can show each route's time-of-day profile without a second request.
     const byRoute = new Map<string, StatRow | null>();
-    for (const h of history) {
-      byRoute.set(h.routeId, mergeStats(byRoute.get(h.routeId) ?? null, h));
-    }
-    for (const l of live) {
-      if (l.daypart !== "all") continue;
-      byRoute.set(l.routeId, mergeStats(byRoute.get(l.routeId) ?? null, l));
-    }
+    const byRouteDaypart = new Map<string, Map<string, StatRow | null>>();
+    const fold = (routeId: string, daypart: string, s: StatRow) => {
+      if (daypart === "all") {
+        byRoute.set(routeId, mergeStats(byRoute.get(routeId) ?? null, s));
+        return;
+      }
+      let parts = byRouteDaypart.get(routeId);
+      if (!parts) {
+        parts = new Map();
+        byRouteDaypart.set(routeId, parts);
+      }
+      parts.set(daypart, mergeStats(parts.get(daypart) ?? null, s));
+    };
+    for (const h of history) fold(h.routeId, h.daypart, h);
+    for (const l of live) fold(l.routeId, l.daypart, l);
 
     const result = routeRows
       .map((r) => {
@@ -139,6 +145,14 @@ export async function statsPlugin(app: FastifyInstance) {
               longName: r.longName,
               color: r.color,
               ...s,
+              dayparts: [...(byRouteDaypart.get(r.routeId)?.entries() ?? [])]
+                .filter((e): e is [string, StatRow] => e[1] != null)
+                .map(([daypart, d]) => ({
+                  daypart,
+                  observations: d.observations,
+                  onTimePct: d.onTimePct,
+                  avgDelaySec: d.avgDelaySec,
+                })),
             }
           : null;
       })
