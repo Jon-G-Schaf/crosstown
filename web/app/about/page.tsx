@@ -15,9 +15,10 @@ export default function AboutPage() {
 
         <div className="mt-6 space-y-5 text-[15px] leading-relaxed text-muted">
           <p>
-            Crosstown watches every COTA bus in Columbus in real time and keeps the receipts.
-            The schedule tells you when the bus should come; this tells you when it actually
-            does. The longer it runs, the better the answer gets.
+            Crosstown shows every COTA bus in Columbus in real time and keeps a permanent
+            record of how the system performs. The schedule says when each bus should
+            arrive. Crosstown records when it did. The longer it runs, the more those
+            records can tell you about a route.
           </p>
 
           <h2 className="pt-4 text-lg font-semibold tracking-tight text-fog">
@@ -25,41 +26,43 @@ export default function AboutPage() {
           </h2>
           <p>
             COTA publishes two public GTFS-realtime feeds: vehicle positions and trip updates.
-            A worker polls positions every 15 seconds (that&apos;s what moves the dots on the{" "}
+            A worker polls positions every 15 seconds and trip updates every 30 seconds,
+            around the clock. The position feed is what moves the buses on the{" "}
             <Link href="/" className="link-quiet text-fog">
               live map
             </Link>
-            ) and trip updates every 30 seconds, around the clock.
+            .
           </p>
           <p>
-            One wrinkle worth knowing: COTA&apos;s feed publishes predicted arrival times but
-            not delays. So Crosstown computes the delay itself, by joining each prediction
-            against the published schedule. The last prediction before the bus reaches a stop
-            is taken as the observed arrival. It is not a perfect ground truth, but it is the
-            same number COTA&apos;s own arrival screens run on. Stops the bus has not reached
-            yet are never counted, and predictions left behind by trips that drop out of the
-            feed are discarded rather than treated as arrivals.
+            COTA&apos;s feed publishes predicted arrival times but not delays, so Crosstown
+            computes each delay by joining the prediction against the published schedule.
+            The last prediction before the bus reaches a stop is taken as the observed
+            arrival. It is not perfect ground truth, but it is the same number COTA&apos;s
+            own arrival screens run on. Stops the bus has not reached are never counted,
+            and predictions left behind by trips that drop out of the feed are discarded
+            rather than treated as arrivals.
           </p>
 
           <h2 className="pt-4 text-lg font-semibold tracking-tight text-fog">
             What counts as on time
           </h2>
           <p>
-            The industry convention: no more than 1 minute early, no more than 5 minutes late.
-            Early matters because an early bus is a missed bus. Every arrival lands in a
-            per-route daily rollup, broken out by time of day, and the raw arrival records are
-            kept for 90 days while the rollups are kept forever.
+            A bus counts as on time if it arrives no more than 1 minute early and no more
+            than 5 minutes late, the standard most US transit agencies report. Early counts
+            against a route because an early bus is one its riders missed. Every arrival
+            lands in a per-route daily rollup, broken out by time of day. Raw arrival
+            records are kept for 90 days, and the rollups are kept permanently.
           </p>
 
           <h2 className="pt-4 text-lg font-semibold tracking-tight text-fog">
             How it is built
           </h2>
           <p>
-            Two deployable pieces in one repo. A TypeScript Fastify service owns ingestion,
-            Postgres, and the API, and pushes live positions to the browser over server-sent
-            events. The frontend is Next.js with MapLibre doing the map work and the bus
-            motion interpolated client-side between feed updates. The aggregations are plain
-            SQL. Source is on{" "}
+            The project is two deployable pieces in one repo. A TypeScript Fastify service
+            handles ingestion, Postgres, and the API, and pushes live positions to the
+            browser over server-sent events. The frontend is Next.js, with MapLibre
+            rendering the map and bus motion interpolated client-side between feed updates.
+            The aggregations are plain SQL. Source is on{" "}
             <a
               href="https://github.com/Jon-G-Schaf/crosstown"
               className="link-quiet text-fog"
@@ -82,8 +85,8 @@ export default function AboutPage() {
             <a href="https://jongschaf.com" className="link-quiet text-fog">
               Jonathan Schafer
             </a>
-            , a full-stack developer in Columbus. Data courtesy of COTA&apos;s open data
-            program; this site is not affiliated with COTA.
+            , a full-stack developer in Columbus. The data comes from COTA&apos;s open data
+            program. This site is not affiliated with COTA.
           </p>
         </div>
       </main>
