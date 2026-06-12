@@ -26,6 +26,11 @@ type RouteStat = {
 
 const RANGES = [7, 30, 90] as const;
 
+// A percentage built on a handful of arrivals is noise. Routes need this
+// many recorded arrivals per day in the window to be ranked; the rest are
+// listed below the ranking without a position.
+const MIN_OBS_PER_DAY = 15;
+
 // Five cells, one per daypart, colored by that period's on-time rate: a
 // route's whole day legible at a glance, right in the ranking row.
 function DaypartStrip({ dayparts }: { dayparts?: DaypartStat[] }) {
@@ -49,6 +54,62 @@ function DaypartStrip({ dayparts }: { dayparts?: DaypartStat[] }) {
         );
       })}
     </span>
+  );
+}
+
+// One row of the list. Ranked rows get a position number; low-sample rows
+// get a quiet dot in its place.
+function RankingRow({
+  route: r,
+  rank,
+  delayIndex,
+}: {
+  route: RouteStat;
+  rank?: number;
+  delayIndex: number;
+}) {
+  return (
+    <li
+      className="reveal border-b border-line"
+      style={{ "--reveal-delay": `${Math.min(delayIndex * 35, 600)}ms` } as React.CSSProperties}
+    >
+      <Link
+        href={`/routes/${r.routeId}`}
+        className="group flex items-center gap-4 px-2 py-3.5 transition-colors hover:bg-panel"
+      >
+        <span className="w-7 text-right font-mono text-xs text-faint">
+          {rank != null ? String(rank).padStart(2, "0") : "·"}
+        </span>
+        <span
+          className="inline-flex h-8 w-13 min-w-13 items-center justify-center rounded-md font-mono text-sm font-semibold text-ink"
+          style={{ backgroundColor: brightenForDark(r.color) }}
+        >
+          {r.shortName}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium text-fog">{r.longName}</span>
+          <span className="block font-mono text-xs text-faint">
+            {r.observations.toLocaleString()} arrivals · avg {fmtDelay(r.avgDelaySec)}
+          </span>
+        </span>
+        <DaypartStrip dayparts={r.dayparts} />
+        <span className="flex w-36 items-center gap-3 max-sm:w-24">
+          <span className="h-1 flex-1 overflow-hidden rounded-full bg-raised">
+            <span
+              className="block h-full rounded-full"
+              style={{
+                width: `${Math.max(2, r.onTimePct)}%`,
+                backgroundColor: statusColor(r.onTimePct),
+                boxShadow: `0 0 8px ${statusColor(r.onTimePct)}66`,
+              }}
+            />
+          </span>
+          <span className="w-13 text-right font-mono text-sm text-fog">
+            {fmtPct(r.onTimePct)}
+          </span>
+        </span>
+      </Link>
+    </li>
   );
 }
 
@@ -76,6 +137,10 @@ export default async function RoutesPage({
     : null;
 
   const sysColor = sys?.todayOnTimePct != null ? statusColor(sys.todayOnTimePct) : null;
+
+  const minObs = range * MIN_OBS_PER_DAY;
+  const ranked = data.routes.filter((r) => r.observations >= minObs);
+  const lowSample = data.routes.filter((r) => r.observations < minObs);
 
   return (
     <>
@@ -171,54 +236,33 @@ export default async function RoutesPage({
             </p>
           </div>
         ) : (
-          <ol>
-            {data.routes.map((r, i) => (
-              <li
-                key={r.routeId}
-                className="reveal border-b border-line"
-                style={{ "--reveal-delay": `${Math.min(i * 35, 600)}ms` } as React.CSSProperties}
-              >
-                <Link
-                  href={`/routes/${r.routeId}`}
-                  className="group flex items-center gap-4 px-2 py-3.5 transition-colors hover:bg-panel"
-                >
-                  <span className="w-7 text-right font-mono text-xs text-faint">
-                    {String(i + 1).padStart(2, "0")}
-                  </span>
-                  <span
-                    className="inline-flex h-8 w-13 min-w-13 items-center justify-center rounded-md font-mono text-sm font-semibold text-ink"
-                    style={{ backgroundColor: brightenForDark(r.color) }}
-                  >
-                    {r.shortName}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-fog">
-                      {r.longName}
-                    </span>
-                    <span className="block font-mono text-xs text-faint">
-                      {r.observations.toLocaleString()} arrivals · avg {fmtDelay(r.avgDelaySec)}
-                    </span>
-                  </span>
-                  <DaypartStrip dayparts={r.dayparts} />
-                  <span className="flex w-36 items-center gap-3 max-sm:w-24">
-                    <span className="h-1 flex-1 overflow-hidden rounded-full bg-raised">
-                      <span
-                        className="block h-full rounded-full"
-                        style={{
-                          width: `${Math.max(2, r.onTimePct)}%`,
-                          backgroundColor: statusColor(r.onTimePct),
-                          boxShadow: `0 0 8px ${statusColor(r.onTimePct)}66`,
-                        }}
-                      />
-                    </span>
-                    <span className="w-13 text-right font-mono text-sm text-fog">
-                      {fmtPct(r.onTimePct)}
-                    </span>
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ol>
+          <>
+            <ol>
+              {ranked.map((r, i) => (
+                <RankingRow key={r.routeId} route={r} rank={i + 1} delayIndex={i} />
+              ))}
+            </ol>
+            {lowSample.length > 0 && (
+              <section className="mt-10">
+                <h2 className="text-[11px] font-medium uppercase tracking-label text-faint">
+                  Not enough data to rank
+                </h2>
+                <p className="mt-1.5 text-xs leading-relaxed text-faint">
+                  These routes have fewer than {minObs.toLocaleString()} recorded arrivals in
+                  this window, so a percentage would say more about luck than the route.
+                </p>
+                <ol className="mt-3">
+                  {lowSample.map((r, i) => (
+                    <RankingRow
+                      key={r.routeId}
+                      route={r}
+                      delayIndex={ranked.length + i}
+                    />
+                  ))}
+                </ol>
+              </section>
+            )}
+          </>
         )}
 
       </main>
