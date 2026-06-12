@@ -52,7 +52,7 @@ export function ArrivalTicker() {
   if (arrivals.length < 4) return null;
 
   return (
-    <div className="panel absolute bottom-4 right-4 hidden w-[min(44vw,560px)] items-center gap-3 overflow-hidden py-2 pl-3.5 lg:flex">
+    <div className="panel absolute bottom-4 right-12 hidden w-[min(44vw,560px)] items-center gap-3 overflow-hidden py-2 pl-3.5 lg:flex">
       <span className="shrink-0 text-[10px] font-medium uppercase tracking-label text-faint">
         Arrivals
       </span>

@@ -253,9 +253,16 @@ export function LiveMap() {
       bearing: intro ? -18 : 0,
       attributionControl: false,
     });
-    // Top-right corner: the default bottom-right spot collides with the
-    // arrival ticker.
-    map.addControl(new maplibregl.AttributionControl({ compact: true }), "top-right");
+    // Bottom-right, collapsed to the icon: the credits stay one tap away
+    // (the basemap's own compact pattern), and the expanded text can't sit
+    // on top of the panel (mobile) or the ticker (desktop). The ticker and
+    // the mobile legend leave the corner clear for it.
+    map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
+    const collapseAttribution = () =>
+      containerRef.current
+        ?.querySelector("details.maplibregl-ctrl-attrib")
+        ?.removeAttribute("open");
+    collapseAttribution();
     mapRef.current = map;
 
     // debug/test handle (used by headless verification)
@@ -364,6 +371,8 @@ export function LiveMap() {
 
     map.on("load", () => {
       applyInkTint(map);
+      // maplibre may re-open the compact attribution while settling
+      collapseAttribution();
 
       // The whole network as faint strands; the selected route lights up.
       map.addSource("network", { type: "geojson", data: empty });
@@ -712,7 +721,7 @@ export function LiveMap() {
       <ArrivalTicker />
 
       {legend.length > 0 && (
-        <div className="panel pointer-events-none absolute bottom-4 left-4 flex items-center gap-4 px-3.5 py-2 max-sm:bottom-3 max-sm:left-3 max-sm:right-3 max-sm:flex-wrap max-sm:gap-x-3 max-sm:gap-y-1">
+        <div className="panel pointer-events-none absolute bottom-4 left-4 flex items-center gap-4 px-3.5 py-2 max-sm:bottom-3 max-sm:left-3 max-sm:right-12 max-sm:flex-wrap max-sm:gap-x-3 max-sm:gap-y-1">
           {legend.map((t) => (
             <span key={t.label} className="flex items-center gap-1.5">
               <span
