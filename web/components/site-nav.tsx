@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { RouteGlyph } from "./wordmark";
 
-export function SiteNav({ active }: { active: "routes" | "about" }) {
+export function SiteNav({ active }: { active: "routes" | "about" | "replay" }) {
   const item = (href: string, key: string, label: string) => (
     <Link
       href={href}
@@ -23,6 +23,7 @@ export function SiteNav({ active }: { active: "routes" | "about" }) {
         </Link>
         <span className="flex-1" />
         {item("/", "map", "Live map")}
+        {item("/replay", "replay", "Replay")}
         {item("/routes", "routes", "Routes")}
         {item("/about", "about", "About")}
       </nav>

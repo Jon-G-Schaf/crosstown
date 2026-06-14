@@ -861,9 +861,14 @@ export function LiveMap() {
           >
             {selectedRoute ? `Route ${selectedRoute.shortName} stats` : "Reliability rankings"}
           </Link>
-          <Link href="/about" className="text-muted transition-colors hover:text-fog">
-            About
-          </Link>
+          <span className="flex items-center gap-4">
+            <Link href="/replay" className="text-muted transition-colors hover:text-fog">
+              Replay
+            </Link>
+            <Link href="/about" className="text-muted transition-colors hover:text-fog">
+              About
+            </Link>
+          </span>
         </div>
         </>
         )}

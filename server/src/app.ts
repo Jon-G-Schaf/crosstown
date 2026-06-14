@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { arrivalsPlugin } from "./routes/arrivals.js";
+import { replayPlugin } from "./routes/replay.js";
 import { routesPlugin } from "./routes/routes.js";
 import { shapesPlugin } from "./routes/shapes.js";
 import { statsPlugin } from "./routes/stats.js";
@@ -23,6 +24,7 @@ export function buildApp() {
   app.register(statsPlugin);
   app.register(shapesPlugin);
   app.register(arrivalsPlugin);
+  app.register(replayPlugin);
 
   return app;
 }

@@ -28,3 +28,20 @@ export type RecentArrival = {
 export type ArrivalsResponse = {
   arrivals: RecentArrival[];
 };
+
+// [t, lon, lat, bearing] with t = seconds from the replay window start;
+// bearing is null when the feed omitted it.
+export type ReplaySample = [number, number, number, number | null];
+
+export type ReplayTrack = {
+  vehicleId: string;
+  routeId: string | null;
+  samples: ReplaySample[];
+};
+
+export type ReplayResponse = {
+  start: string;
+  end: string;
+  bucketSec: number;
+  tracks: ReplayTrack[];
+};
