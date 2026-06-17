@@ -3,6 +3,7 @@ import type { FastifyBaseLogger } from "fastify";
 import { lt } from "drizzle-orm";
 import { db, sql } from "../db/index.js";
 import { stopEvents } from "../db/schema.js";
+import { localServiceDate } from "../jobs/rollup.js";
 
 const TRIP_FEED_URL =
   process.env.TRIP_FEED_URL ??
@@ -177,9 +178,10 @@ export async function pollTripUpdatesOnce(log: FastifyBaseLogger) {
 }
 
 export async function pruneStopEvents(log: FastifyBaseLogger) {
-  const cutoff = new Date(Date.now() - RETENTION_DAYS * 24 * 3600 * 1000)
-    .toISOString()
-    .slice(0, 10);
+  // service_date is a New-York service date, so the cutoff must be one too.
+  // Deriving it from UTC (Date.now) drifts a day in the evening, and with the
+  // 3-day window that would delete the oldest day the boot rollup still needs.
+  const cutoff = localServiceDate(-RETENTION_DAYS);
   await db.delete(stopEvents).where(lt(stopEvents.serviceDate, cutoff));
   log.info({ cutoff }, "pruned stop events");
 }

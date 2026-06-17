@@ -105,12 +105,16 @@ export function startRollupJob(log: FastifyBaseLogger) {
     }
   };
 
-  // Catch up the last few days on boot so a multi-day outage cannot lose a
-  // service day before the 3-day stop_events retention prunes it, then
-  // refinalize yesterday hourly. Re-runs are idempotent, so the 3:30am
-  // "nightly" timing is a non-event: whichever run lands after midnight
-  // finalizes the day.
-  for (const offset of [-1, -2, -3]) run("boot", offset);
-  const timer = setInterval(() => run("scheduled", -1), 3600 * 1000);
+  // Finalize the last few service days, one at a time. Running the whole window
+  // on every tick (not just boot) means a day that fails one run is retried on
+  // the next, so a transient error or a multi-day outage cannot lose a day
+  // before the 3-day stop_events retention prunes it. Idempotent upserts keep
+  // the re-runs of already-final days cheap, and sequential awaits avoid three
+  // concurrent full-day aggregations piling onto a just-recovered database.
+  const runWindow = async (label: string) => {
+    for (const offset of [-1, -2, -3]) await run(label, offset);
+  };
+  runWindow("boot");
+  const timer = setInterval(() => runWindow("scheduled"), 3600 * 1000);
   return () => clearInterval(timer);
 }
