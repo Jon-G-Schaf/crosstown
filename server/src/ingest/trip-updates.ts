@@ -11,13 +11,13 @@ const TRIP_FEED_URL =
 // The feed regenerates on a 30s cycle (measured June 11); polling faster
 // than that just re-downloads identical bytes.
 export const TRIP_POLL_INTERVAL_MS = 30_000;
-// Raw stop_events are only read for "today" (live stats) and by the hourly
-// rollup that finalizes each service day into route_day_stats; nothing reads
-// raw rows older than that. route_day_stats holds the permanent history, so a
-// short raw-retention window has no product impact and keeps the 500MB volume
-// from filling (90 days would reach ~600MB on its own). 7 days leaves a wide
-// buffer for rollup re-runs and audits.
-const RETENTION_DAYS = 7;
+// Raw stop_events feed only "today" live stats and the rollup that finalizes
+// each service day into route_day_stats (the permanent history). Nothing reads
+// raw rows older than that, so retention stays short to keep the 500MB volume
+// from filling. It filled twice (June 14 and 17, 2026); at ~110k rows/day, 3
+// days holds stop_events near 45MB and still gives the rollup two full days to
+// catch up after an outage before a day is pruned.
+const RETENTION_DAYS = 3;
 const TZ = "America/New_York";
 
 // The feed honors If-Modified-Since with a 304, so an unchanged file costs

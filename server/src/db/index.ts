@@ -35,4 +35,17 @@ export async function tuneTables() {
       )
     `;
   }
+
+  // Keep WAL inside the 500MB volume. The stock max_wal_size (1GB) let pg_wal
+  // grow past 100MB and fill the disk (June 14 and 17 2026); 64MB is ample for
+  // this low write rate. ALTER SYSTEM persists it in postgresql.auto.conf and
+  // it is reloadable, so this also re-applies the ceiling if the managed config
+  // is ever reset. Skipped silently when the role is not a superuser (local dev).
+  try {
+    await sql`alter system set max_wal_size = '64MB'`;
+    await sql`alter system set min_wal_size = '32MB'`;
+    await sql`select pg_reload_conf()`;
+  } catch {
+    // not a superuser; leave WAL at the server default
+  }
 }

@@ -129,16 +129,11 @@ async function main() {
     : [];
 
   console.log("Replacing static tables");
-  await db.transaction(async (tx) => {
-    await tx.delete(stopTimes);
-    await tx.delete(trips);
-    await tx.delete(shapes);
-    await tx.delete(calendarDates);
-    await tx.delete(calendar);
-    await tx.delete(stops);
-    await tx.delete(routes);
-    await tx.delete(gtfsMeta);
-  });
+  // TRUNCATE, not DELETE: a full reload runs on every deploy, and DELETE leaves
+  // the old rows as dead tuples that bloat the files until autovacuum catches
+  // up (stop_times reached ~2x its live size and helped fill the 500MB volume).
+  // TRUNCATE frees the space at once so each load writes a fresh, compact table.
+  await sql`truncate table stop_times, trips, shapes, calendar_dates, calendar, stops, routes, gtfs_meta`;
 
   await insertChunked(routes, routeRows, "routes");
   await insertChunked(stops, stopRows, "stops");

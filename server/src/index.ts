@@ -2,6 +2,7 @@ import { buildApp } from "./app.js";
 import { runMigrations, tuneTables } from "./db/index.js";
 import { startTripUpdateIngest } from "./ingest/trip-updates.js";
 import { startVehicleIngest } from "./ingest/vehicles.js";
+import { startDiskGuard } from "./jobs/disk-guard.js";
 import { startRollupJob } from "./jobs/rollup.js";
 
 try {
@@ -22,6 +23,7 @@ try {
     startVehicleIngest(app.log);
     startTripUpdateIngest(app.log);
     startRollupJob(app.log);
+    startDiskGuard(app.log);
   }
 } catch (err) {
   app.log.error(err);

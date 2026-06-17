@@ -12,6 +12,12 @@ const VEHICLE_FEED_URL =
 // the pickup latency, and If-Modified-Since makes the unchanged poll free.
 export const POLL_INTERVAL_MS = 15_000;
 const RETENTION_HOURS = 48;
+// Store at most one ping per vehicle per minute. The live map reads the
+// in-memory snapshot (full resolution), and the replay query buckets at 120s,
+// so storing the raw ~30s feed cadence just doubled vehicle_positions and
+// helped fill the 500MB volume (June 17 2026). 60s halves the table with no
+// visible loss.
+const STORE_BUCKET_MS = 60_000;
 
 export type VehicleSnapshot = {
   vehicleId: string;
@@ -28,6 +34,7 @@ export type VehicleSnapshot = {
 let snapshot: VehicleSnapshot[] = [];
 let snapshotAt: string | null = null;
 const lastSeenTs = new Map<string, number>();
+const lastStoredBucket = new Map<string, number>();
 
 export type SnapshotPayload = { vehicles: VehicleSnapshot[]; updatedAt: string | null };
 
@@ -95,10 +102,15 @@ export async function pollVehiclesOnce(log: FastifyBaseLogger) {
     };
     next.push(row);
 
-    // Feed repeats unchanged pings between polls; only store movement.
+    // Feed repeats unchanged pings between polls; only store movement, and at
+    // most one row per vehicle per STORE_BUCKET_MS so the table stays small.
     if (lastSeenTs.get(vehicleId) !== tsMs) {
       lastSeenTs.set(vehicleId, tsMs);
-      fresh.push({ ...row, ts: new Date(tsMs) });
+      const bucket = Math.floor(tsMs / STORE_BUCKET_MS);
+      if (lastStoredBucket.get(vehicleId) !== bucket) {
+        lastStoredBucket.set(vehicleId, bucket);
+        fresh.push({ ...row, ts: new Date(tsMs) });
+      }
     }
   }
 
@@ -119,8 +131,9 @@ export async function pruneVehiclePositions(log: FastifyBaseLogger) {
   log.info({ cutoff: cutoff.toISOString() }, "pruned vehicle positions");
 }
 
-// lastSeenTs is in-memory, so a restart would re-insert each vehicle's
-// current ping as a duplicate row. Seed it from the latest stored pings.
+// lastSeenTs and lastStoredBucket are in-memory, so a restart would re-insert
+// each vehicle's current ping as a duplicate row. Seed both from the latest
+// stored pings.
 async function seedLastSeen() {
   const rows = await sql<{ vehicle_id: string; ts: Date }[]>`
     select vehicle_id, max(ts) as ts
@@ -128,7 +141,11 @@ async function seedLastSeen() {
     where ts > now() - interval '2 hours'
     group by vehicle_id
   `;
-  for (const r of rows) lastSeenTs.set(r.vehicle_id, new Date(r.ts).getTime());
+  for (const r of rows) {
+    const ms = new Date(r.ts).getTime();
+    lastSeenTs.set(r.vehicle_id, ms);
+    lastStoredBucket.set(r.vehicle_id, Math.floor(ms / STORE_BUCKET_MS));
+  }
 }
 
 export function startVehicleIngest(log: FastifyBaseLogger) {

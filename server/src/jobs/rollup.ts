@@ -95,20 +95,22 @@ export function localServiceDate(offsetDays: number): string {
 }
 
 export function startRollupJob(log: FastifyBaseLogger) {
-  const run = async (label: string) => {
-    const yesterday = localServiceDate(-1);
+  const run = async (label: string, offset: number) => {
+    const serviceDate = localServiceDate(offset);
     try {
-      await rollupServiceDate(yesterday);
-      log.info({ serviceDate: yesterday, label }, "rollup complete");
+      await rollupServiceDate(serviceDate);
+      log.info({ serviceDate, label }, "rollup complete");
     } catch (err) {
-      log.warn({ err, serviceDate: yesterday }, "rollup failed");
+      log.warn({ err, serviceDate }, "rollup failed");
     }
   };
 
-  // Catch up on boot (covers restarts and deploy gaps), then hourly.
-  // Hourly re-runs are cheap and make the 3:30am "nightly" timing a
-  // non-event: whichever run happens after midnight finalizes the day.
-  run("boot");
-  const timer = setInterval(() => run("scheduled"), 3600 * 1000);
+  // Catch up the last few days on boot so a multi-day outage cannot lose a
+  // service day before the 3-day stop_events retention prunes it, then
+  // refinalize yesterday hourly. Re-runs are idempotent, so the 3:30am
+  // "nightly" timing is a non-event: whichever run lands after midnight
+  // finalizes the day.
+  for (const offset of [-1, -2, -3]) run("boot", offset);
+  const timer = setInterval(() => run("scheduled", -1), 3600 * 1000);
   return () => clearInterval(timer);
 }
