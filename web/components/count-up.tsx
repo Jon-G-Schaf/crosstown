@@ -34,7 +34,10 @@ export function CountUp({
 
   return (
     <span className="font-mono tabular-nums">
-      {shown.toFixed(decimals)}
+      {shown.toLocaleString("en-US", {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals,
+      })}
       {suffix}
     </span>
   );

@@ -3,14 +3,14 @@ import { and, asc, eq, gte, lt, sql as dsqlRaw } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { routeDayStats, routes } from "../db/schema.js";
 import { localServiceDate, pulseSelectSql, statsSelectSql } from "../jobs/rollup.js";
-import { mergeStats, OBSERVED_EVENT_SQL, type StatRow } from "../lib/reliability.js";
+import { mergeStats, type StatRow } from "../lib/reliability.js";
 
 const RANGES = new Set([7, 30, 90]);
 const LIVE_CACHE_MS = 60_000;
 
 type AggRow = StatRow & { routeId: string; daypart: string; serviceDate?: string };
 
-let liveCache: { at: number; rows: AggRow[]; pendingToday: number } | null = null;
+let liveCache: { at: number; rows: AggRow[] } | null = null;
 
 type PulseBody = {
   serviceDate: string;
@@ -18,28 +18,18 @@ type PulseBody = {
 };
 let pulseCache: { at: number; body: PulseBody } | null = null;
 
-// Today's stop_events aggregated on the fly; rollups only cover finished
-// days. pendingToday counts today's rows that are still forecasts (or
-// ghosts), so the on-record counter can exclude them.
-async function liveTodayStats(): Promise<{ rows: AggRow[]; pendingToday: number }> {
+// Today's stop_events aggregated on the fly; rollups only cover finished days.
+async function liveTodayStats(): Promise<{ rows: AggRow[] }> {
   if (liveCache && Date.now() - liveCache.at < LIVE_CACHE_MS) return liveCache;
   const today = localServiceDate(0);
-  const [raw, [pending]] = await Promise.all([
-    db.execute<{
-      route_id: string;
-      daypart: string;
-      observations: number;
-      on_time_pct: number;
-      avg_delay_sec: number;
-      p90_delay_sec: number;
-    }>(statsSelectSql(today)),
-    db.execute<{ pending: number }>(dsqlRaw`
-      select count(*)::int as pending
-      from stop_events
-      where service_date = ${today}
-        and not (${dsqlRaw.raw(OBSERVED_EVENT_SQL)})
-    `),
-  ]);
+  const raw = await db.execute<{
+    route_id: string;
+    daypart: string;
+    observations: number;
+    on_time_pct: number;
+    avg_delay_sec: number;
+    p90_delay_sec: number;
+  }>(statsSelectSql(today));
   const rows = raw.map((r) => ({
     routeId: r.route_id,
     daypart: r.daypart,
@@ -48,7 +38,7 @@ async function liveTodayStats(): Promise<{ rows: AggRow[]; pendingToday: number 
     avgDelaySec: r.avg_delay_sec,
     p90DelaySec: r.p90_delay_sec,
   }));
-  liveCache = { at: Date.now(), rows, pendingToday: pending?.pending ?? 0 };
+  liveCache = { at: Date.now(), rows };
   return liveCache;
 }
 
@@ -58,24 +48,29 @@ function parseRange(raw: unknown): number {
 }
 
 export async function statsPlugin(app: FastifyInstance) {
-  // Headline numbers for the map panel and rankings hero. The on-record
-  // count is Postgres' row estimate; close enough for a counter and free.
+  // Headline numbers for the map panel and rankings hero.
   app.get("/api/stats/system", async () => {
-    const { rows: live, pendingToday } = await liveTodayStats();
+    const { rows: live } = await liveTodayStats();
     const alls = live.filter((l) => l.daypart === "all");
     const arrivalsToday = alls.reduce((sum, l) => sum + l.observations, 0);
     const todayOnTimePct =
       arrivalsToday > 0
         ? alls.reduce((sum, l) => sum + l.onTimePct * l.observations, 0) / arrivalsToday
         : null;
-    const [estimate] = await db.execute<{ estimate: string }>(
-      dsqlRaw`select greatest(reltuples, 0)::bigint::text as estimate
-              from pg_class where relname = 'stop_events'`,
-    );
+    // Lifetime arrivals measured. stop_events keeps only 3 days, so its row
+    // count plateaus; route_day_stats is the durable archive (one 'all' row
+    // per route per finished day, never pruned), so summing it and adding
+    // today's live count gives a total that climbs for the life of the
+    // project. Observed-only already, since the rollup drops ghosts/forecasts.
+    const [lifetime] = await db.execute<{ total: string }>(dsqlRaw`
+      select coalesce(sum(observations), 0)::bigint::text as total
+      from route_day_stats
+      where daypart = 'all'
+    `);
     return {
       todayOnTimePct,
       arrivalsToday,
-      arrivalsOnRecord: Math.max(Number(estimate?.estimate ?? 0) - pendingToday, arrivalsToday),
+      arrivalsOnRecord: Number(lifetime?.total ?? 0) + arrivalsToday,
     };
   });
 
