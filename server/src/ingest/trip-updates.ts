@@ -4,6 +4,7 @@ import { lt } from "drizzle-orm";
 import { db, sql } from "../db/index.js";
 import { stopEvents } from "../db/schema.js";
 import { localServiceDate } from "../jobs/rollup.js";
+import { startSingleFlight } from "../lib/single-flight.js";
 
 const TRIP_FEED_URL =
   process.env.TRIP_FEED_URL ??
@@ -12,6 +13,7 @@ const TRIP_FEED_URL =
 // The feed regenerates on a 30s cycle (measured June 11); polling faster
 // than that just re-downloads identical bytes.
 export const TRIP_POLL_INTERVAL_MS = 30_000;
+const REQUEST_TIMEOUT_MS = 25_000;
 // Raw stop_events feed only "today" live stats and the rollup that finalizes
 // each service day into route_day_stats (the permanent history). Nothing reads
 // raw rows older than that, so retention stays short to keep the 500MB volume
@@ -120,13 +122,14 @@ export async function upsertCandidates(rows: Candidate[]) {
 export async function pollTripUpdatesOnce(log: FastifyBaseLogger) {
   const res = await fetch(TRIP_FEED_URL, {
     headers: feedLastModified ? { "if-modified-since": feedLastModified } : undefined,
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (res.status === 304) {
     log.info("trip updates poll: feed unchanged");
     return;
   }
   if (!res.ok) throw new Error(`trip feed responded ${res.status}`);
-  feedLastModified = res.headers.get("last-modified");
+  const nextLastModified = res.headers.get("last-modified");
   const feed = GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(
     new Uint8Array(await res.arrayBuffer()),
   );
@@ -173,6 +176,9 @@ export async function pollTripUpdatesOnce(log: FastifyBaseLogger) {
   if (rows.length > 0) {
     await upsertCandidates(rows);
   }
+  // Preserve retryability: a decode or database failure must not advance the
+  // conditional-request validator and turn the retry into a 304.
+  feedLastModified = nextLastModified;
 
   log.info({ candidates: rows.length, skipped }, "trip updates poll");
 }
@@ -187,17 +193,18 @@ export async function pruneStopEvents(log: FastifyBaseLogger) {
 }
 
 export function startTripUpdateIngest(log: FastifyBaseLogger) {
-  const tick = () =>
-    pollTripUpdatesOnce(log).catch((err) => log.warn({ err }, "trip updates poll failed"));
   const prune = () =>
     pruneStopEvents(log).catch((err) => log.warn({ err }, "stop events prune failed"));
 
-  tick();
+  const stopPoll = startSingleFlight({
+    intervalMs: TRIP_POLL_INTERVAL_MS,
+    run: () => pollTripUpdatesOnce(log),
+    onError: (err) => log.warn({ err }, "trip updates poll failed"),
+  });
   prune();
-  const pollTimer = setInterval(tick, TRIP_POLL_INTERVAL_MS);
   const pruneTimer = setInterval(prune, 24 * 3600 * 1000);
   return () => {
-    clearInterval(pollTimer);
+    stopPoll();
     clearInterval(pruneTimer);
   };
 }

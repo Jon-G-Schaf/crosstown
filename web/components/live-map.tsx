@@ -578,14 +578,21 @@ export function LiveMap() {
         const route = p.routeId ? routesRef.current.get(p.routeId) : null;
         const mph = p.speed != null ? Math.round(Number(p.speed) * 2.237) : null;
         const ago = Math.max(0, Math.round((Date.now() - new Date(p.ts).getTime()) / 1000));
+        const popup = document.createElement("div");
+        popup.className = "ct-popup";
+        const routeLine = document.createElement("div");
+        routeLine.className = "ct-popup-route";
+        routeLine.textContent = route
+          ? `${route.shortName} · ${route.longName}`
+          : "Out of service";
+        const metaLine = document.createElement("div");
+        metaLine.className = "ct-popup-meta";
+        metaLine.textContent = `bus ${p.vehicleId}${mph != null ? ` · ${mph} mph` : ""} · ping ${ago}s ago`;
+        popup.append(routeLine, metaLine);
+
         new maplibregl.Popup({ closeButton: false, offset: 12, maxWidth: "260px" })
           .setLngLat((f.geometry as GeoJSON.Point).coordinates as [number, number])
-          .setHTML(
-            `<div class="ct-popup">
-               <div class="ct-popup-route">${route ? `${route.shortName} · ${route.longName}` : "Out of service"}</div>
-               <div class="ct-popup-meta">bus ${p.vehicleId}${mph != null ? ` · ${mph} mph` : ""} · ping ${ago}s ago</div>
-             </div>`,
-          )
+          .setDOMContent(popup)
           .addTo(map);
       };
       for (const layer of ["vehicles", "vehicles-arrow"]) {

@@ -3,6 +3,7 @@ import type { FastifyBaseLogger } from "fastify";
 import { lt } from "drizzle-orm";
 import { db, sql } from "../db/index.js";
 import { vehiclePositions } from "../db/schema.js";
+import { startSingleFlight } from "../lib/single-flight.js";
 
 const VEHICLE_FEED_URL =
   process.env.VEHICLE_FEED_URL ??
@@ -11,6 +12,7 @@ const VEHICLE_FEED_URL =
 // The feed regenerates on a 30s cycle (measured June 11); 15s polling halves
 // the pickup latency, and If-Modified-Since makes the unchanged poll free.
 export const POLL_INTERVAL_MS = 15_000;
+const REQUEST_TIMEOUT_MS = 12_000;
 const RETENTION_HOURS = 48;
 // Store at most one ping per vehicle per minute. The live map reads the
 // in-memory snapshot (full resolution), and the replay query buckets at 120s,
@@ -69,19 +71,21 @@ let feedLastModified: string | null = null;
 export async function pollVehiclesOnce(log: FastifyBaseLogger) {
   const res = await fetch(VEHICLE_FEED_URL, {
     headers: feedLastModified ? { "if-modified-since": feedLastModified } : undefined,
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (res.status === 304) {
     log.info("vehicle poll: feed unchanged");
     return;
   }
   if (!res.ok) throw new Error(`vehicle feed responded ${res.status}`);
-  feedLastModified = res.headers.get("last-modified");
+  const nextLastModified = res.headers.get("last-modified");
   const feed = GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(
     new Uint8Array(await res.arrayBuffer()),
   );
 
   const next: VehicleSnapshot[] = [];
   const fresh: (typeof vehiclePositions.$inferInsert)[] = [];
+  const stateUpdates: { vehicleId: string; tsMs: number; bucket: number }[] = [];
 
   for (const entity of feed.entity) {
     const v = entity.vehicle;
@@ -105,23 +109,36 @@ export async function pollVehiclesOnce(log: FastifyBaseLogger) {
     // Feed repeats unchanged pings between polls; only store movement, and at
     // most one row per vehicle per STORE_BUCKET_MS so the table stays small.
     if (lastSeenTs.get(vehicleId) !== tsMs) {
-      lastSeenTs.set(vehicleId, tsMs);
       const bucket = Math.floor(tsMs / STORE_BUCKET_MS);
       if (lastStoredBucket.get(vehicleId) !== bucket) {
-        lastStoredBucket.set(vehicleId, bucket);
         fresh.push({ ...row, ts: new Date(tsMs) });
       }
+      stateUpdates.push({ vehicleId, tsMs, bucket });
     }
   }
 
   snapshot = next;
   snapshotAt = new Date().toISOString();
   const payload = getSnapshot();
-  for (const fn of listeners) fn(payload);
+  for (const fn of listeners) {
+    try {
+      fn(payload);
+    } catch (err) {
+      log.warn({ err }, "vehicle snapshot listener failed");
+    }
+  }
 
   if (fresh.length > 0) {
     await db.insert(vehiclePositions).values(fresh);
   }
+  for (const update of stateUpdates) {
+    lastSeenTs.set(update.vehicleId, update.tsMs);
+    lastStoredBucket.set(update.vehicleId, update.bucket);
+  }
+  // Only advance the validator after decoding and persistence succeed. If
+  // either fails, the same feed revision must be retried rather than skipped
+  // by a 304 on the next poll.
+  feedLastModified = nextLastModified;
   log.info({ vehicles: next.length, stored: fresh.length }, "vehicle poll");
 }
 
@@ -149,19 +166,24 @@ async function seedLastSeen() {
 }
 
 export function startVehicleIngest(log: FastifyBaseLogger) {
-  const tick = () =>
-    pollVehiclesOnce(log).catch((err) => log.warn({ err }, "vehicle poll failed"));
   const prune = () =>
     pruneVehiclePositions(log).catch((err) => log.warn({ err }, "prune failed"));
 
-  seedLastSeen()
-    .catch((err) => log.warn({ err }, "last-seen seed failed"))
-    .finally(tick);
+  let stopped = false;
+  let stopPoll: (() => void) | null = null;
+  seedLastSeen().catch((err) => log.warn({ err }, "last-seen seed failed")).finally(() => {
+    if (stopped) return;
+    stopPoll = startSingleFlight({
+      intervalMs: POLL_INTERVAL_MS,
+      run: () => pollVehiclesOnce(log),
+      onError: (err) => log.warn({ err }, "vehicle poll failed"),
+    });
+  });
   prune();
-  const pollTimer = setInterval(tick, POLL_INTERVAL_MS);
   const pruneTimer = setInterval(prune, 3600 * 1000);
   return () => {
-    clearInterval(pollTimer);
+    stopped = true;
+    stopPoll?.();
     clearInterval(pruneTimer);
   };
 }

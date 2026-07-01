@@ -87,18 +87,29 @@ export async function loadReplayTracks(start: Date, end: Date): Promise<ReplayTr
     order by vehicle_id, bucket
   `);
 
-  const byVehicle = new Map<string, ReplayTrack>();
+  // A physical bus can serve several routes during a 24-hour window. Keep
+  // route-contiguous segments separate so the replay never colors a later run
+  // with the vehicle's first route or interpolates across a route change.
+  const tracks: ReplayTrack[] = [];
+  let current: ReplayTrack | null = null;
+  const finishCurrent = () => {
+    if (current && current.samples.length >= 2) tracks.push(current);
+  };
   for (const r of rows) {
-    let track = byVehicle.get(r.vehicle_id);
-    if (!track) {
-      track = { vehicleId: r.vehicle_id, routeId: r.route_id, samples: [] };
-      byVehicle.set(r.vehicle_id, track);
+    if (
+      !current ||
+      current.vehicleId !== r.vehicle_id ||
+      current.routeId !== r.route_id
+    ) {
+      finishCurrent();
+      current = { vehicleId: r.vehicle_id, routeId: r.route_id, samples: [] };
     }
-    track.samples.push([r.t, r.lon, r.lat, r.bearing]);
+    current.samples.push([r.t, r.lon, r.lat, r.bearing]);
   }
+  finishCurrent();
 
   // A single ping can't be interpolated into movement; drop those tracks.
-  return [...byVehicle.values()].filter((t) => t.samples.length >= 2);
+  return tracks;
 }
 
 export async function replayPlugin(app: FastifyInstance) {

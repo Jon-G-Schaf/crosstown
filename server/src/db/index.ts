@@ -50,4 +50,14 @@ export async function tuneTables() {
   } catch {
     // not a superuser; leave WAL at the server default
   }
+
+  // Railway's Postgres image preloads pg_stat_statements. Install its SQL
+  // interface when available so the disk guard can reset the append-only query
+  // text file before it consumes the small volume. This is operational
+  // metadata only; application behavior does not depend on the extension.
+  try {
+    await sql`create extension if not exists pg_stat_statements`;
+  } catch {
+    // The extension may be unavailable in lightweight local Postgres images.
+  }
 }

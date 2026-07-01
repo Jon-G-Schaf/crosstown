@@ -91,4 +91,61 @@ describe.runIf(available)("loadReplayTracks", () => {
     // the pre-window ping at t=-600s is excluded; two in-window buckets remain.
     expect(a.samples.map((s) => s[0])).toEqual([0, 120]);
   });
+
+  it("splits a vehicle track when the assigned route changes", async () => {
+    await runMigrations();
+    await db.delete(vehiclePositions);
+
+    await db.insert(vehiclePositions).values([
+      {
+        vehicleId: "A",
+        tripId: null,
+        routeId: "2",
+        lat: 39.95,
+        lon: -82.99,
+        bearing: null,
+        speed: null,
+        ts: at(30),
+      },
+      {
+        vehicleId: "A",
+        tripId: null,
+        routeId: "2",
+        lat: 39.96,
+        lon: -82.98,
+        bearing: null,
+        speed: null,
+        ts: at(150),
+      },
+      {
+        vehicleId: "A",
+        tripId: null,
+        routeId: "5",
+        lat: 39.97,
+        lon: -82.97,
+        bearing: null,
+        speed: null,
+        ts: at(270),
+      },
+      {
+        vehicleId: "A",
+        tripId: null,
+        routeId: "5",
+        lat: 39.98,
+        lon: -82.96,
+        bearing: null,
+        speed: null,
+        ts: at(390),
+      },
+    ]);
+
+    const tracks = await loadReplayTracks(START, END);
+
+    expect(tracks).toHaveLength(2);
+    expect(tracks.map((t) => t.routeId)).toEqual(["2", "5"]);
+    expect(tracks.map((t) => t.samples.map((s) => s[0]))).toEqual([
+      [0, 120],
+      [240, 360],
+    ]);
+  });
 });

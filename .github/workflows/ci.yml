@@ -30,3 +30,4 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint -w web
       - run: npm test -w server
+      - run: npm run build

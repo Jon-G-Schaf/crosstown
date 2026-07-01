@@ -97,7 +97,9 @@ export async function statsPlugin(app: FastifyInstance) {
 
   app.get<{ Querystring: { range?: string } }>("/api/stats/routes", async (req) => {
     const range = parseRange(req.query.range);
-    const since = localServiceDate(-range);
+    // The window includes today, so 7d means today plus the previous six
+    // service dates rather than eight dates from today-7 through today.
+    const since = localServiceDate(1 - range);
     const today = localServiceDate(0);
 
     const [history, { rows: live }, routeRows] = await Promise.all([
@@ -161,7 +163,7 @@ export async function statsPlugin(app: FastifyInstance) {
     "/api/stats/routes/:id",
     async (req, reply) => {
       const range = parseRange(req.query.range);
-      const since = localServiceDate(-range);
+      const since = localServiceDate(1 - range);
       const today = localServiceDate(0);
 
       const [route] = await db.select().from(routes).where(eq(routes.routeId, req.params.id));

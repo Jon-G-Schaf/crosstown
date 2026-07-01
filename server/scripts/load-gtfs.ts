@@ -2,6 +2,7 @@
 // Usage: npm run load-gtfs -w server
 import AdmZip from "adm-zip";
 import { parse } from "csv-parse/sync";
+import { sql as dsql } from "drizzle-orm";
 import {
   calendar,
   calendarDates,
@@ -36,10 +37,14 @@ function readCsv(zip: AdmZip, name: string): Row[] {
   });
 }
 
-async function insertChunked<T>(table: Parameters<typeof db.insert>[0], rows: T[], label: string) {
+async function insertChunked<T>(
+  rows: T[],
+  label: string,
+  insert: (chunk: T[]) => PromiseLike<unknown>,
+) {
   const chunkSize = 1000;
   for (let i = 0; i < rows.length; i += chunkSize) {
-    await db.insert(table).values(rows.slice(i, i + chunkSize) as never);
+    await insert(rows.slice(i, i + chunkSize));
   }
   console.log(`  ${label}: ${rows.length} rows`);
 }
@@ -133,16 +138,32 @@ async function main() {
   // the old rows as dead tuples that bloat the files until autovacuum catches
   // up (stop_times reached ~2x its live size and helped fill the 500MB volume).
   // TRUNCATE frees the space at once so each load writes a fresh, compact table.
-  await sql`truncate table stop_times, trips, shapes, calendar_dates, calendar, stops, routes, gtfs_meta`;
+  // Keep TRUNCATE and every replacement insert in one transaction. PostgreSQL
+  // preserves the old relfiles until commit, so a failed parse/insert rolls
+  // back to the complete previous schedule; a successful commit still frees
+  // the old table storage immediately without DELETE bloat.
+  await db.transaction(async (tx) => {
+    await tx.execute(
+      dsql.raw(
+        "truncate table stop_times, trips, shapes, calendar_dates, calendar, stops, routes, gtfs_meta",
+      ),
+    );
 
-  await insertChunked(routes, routeRows, "routes");
-  await insertChunked(stops, stopRows, "stops");
-  await insertChunked(trips, tripRows, "trips");
-  await insertChunked(stopTimes, stopTimeRows, "stop_times");
-  await insertChunked(shapes, shapeRows, "shapes");
-  await insertChunked(calendar, calendarRows, "calendar");
-  await insertChunked(calendarDates, calendarDateRows, "calendar_dates");
-  await db.insert(gtfsMeta).values({ id: 1, loadedAt: new Date(), source: GTFS_URL });
+    await insertChunked(routeRows, "routes", (chunk) => tx.insert(routes).values(chunk));
+    await insertChunked(stopRows, "stops", (chunk) => tx.insert(stops).values(chunk));
+    await insertChunked(tripRows, "trips", (chunk) => tx.insert(trips).values(chunk));
+    await insertChunked(stopTimeRows, "stop_times", (chunk) =>
+      tx.insert(stopTimes).values(chunk),
+    );
+    await insertChunked(shapeRows, "shapes", (chunk) => tx.insert(shapes).values(chunk));
+    await insertChunked(calendarRows, "calendar", (chunk) =>
+      tx.insert(calendar).values(chunk),
+    );
+    await insertChunked(calendarDateRows, "calendar_dates", (chunk) =>
+      tx.insert(calendarDates).values(chunk),
+    );
+    await tx.insert(gtfsMeta).values({ id: 1, loadedAt: new Date(), source: GTFS_URL });
+  });
 
   console.log("Done");
   await sql.end();

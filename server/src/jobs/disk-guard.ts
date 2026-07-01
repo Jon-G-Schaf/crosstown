@@ -16,10 +16,19 @@ import { pruneStopEvents } from "../ingest/trip-updates.js";
 const CHECK_INTERVAL_MS = 10 * 60 * 1000;
 const FIRST_CHECK_MS = 60 * 1000; // let boot and any crash recovery settle first
 const HIGH_WATER_MB = 340; // volume is ~434MB usable
+const QUERY_STATS_HIGH_WATER_MB = 32;
 
-async function usageMb(): Promise<{ dbMb: number; walMb: number; totalMb: number }> {
+type DiskUsage = { dbMb: number; walMb: number; statsMb: number; totalMb: number };
+
+// Account for the whole Postgres cluster, not just the application database.
+// pg_database_size(current_database()) previously missed the template/system
+// databases and, more importantly, pg_stat_statements' append-only query-text
+// file (88MB during the July 1 incident). Filesystem metadata is still outside
+// SQL's view, so HIGH_WATER_MB deliberately leaves substantial headroom.
+export async function usageMb(): Promise<DiskUsage> {
   const db = await sql<{ bytes: string }[]>`
-    select pg_database_size(current_database())::bigint as bytes
+    select coalesce(sum(pg_database_size(datname)), 0)::bigint as bytes
+    from pg_database
   `;
   const dbMb = Number(db[0]?.bytes ?? 0) / 1048576;
   let walMb = 0;
@@ -33,7 +42,30 @@ async function usageMb(): Promise<{ dbMb: number; walMb: number; totalMb: number
   } catch {
     // not privileged for pg_ls_waldir(); skip the WAL component
   }
-  return { dbMb, walMb, totalMb: dbMb + walMb };
+  let statsMb = 0;
+  try {
+    const stats = await sql<{ bytes: string }[]>`
+      select coalesce(
+        (pg_stat_file('pg_stat_tmp/pgss_query_texts.stat', true)).size,
+        0
+      )::bigint as bytes
+    `;
+    statsMb = Number(stats[0]?.bytes ?? 0) / 1048576;
+  } catch {
+    // pg_stat_file needs elevated privileges and the file is optional.
+  }
+  return { dbMb, walMb, statsMb, totalMb: dbMb + walMb + statsMb };
+}
+
+async function resetQueryStats(log: FastifyBaseLogger) {
+  try {
+    await sql`select pg_stat_statements_reset()`;
+    log.warn("disk guard: reset oversized pg_stat_statements query text");
+    return true;
+  } catch (err) {
+    log.warn({ err }, "disk guard: query statistics reset failed");
+    return false;
+  }
 }
 
 export function startDiskGuard(log: FastifyBaseLogger) {
@@ -42,10 +74,14 @@ export function startDiskGuard(log: FastifyBaseLogger) {
     if (busy) return; // a slow prune must not overlap the next tick
     busy = true;
     try {
-      const u = await usageMb();
+      let u = await usageMb();
+      if (u.statsMb >= QUERY_STATS_HIGH_WATER_MB && (await resetQueryStats(log))) {
+        u = await usageMb();
+      }
       const line = {
         dbMb: Math.round(u.dbMb),
         walMb: Math.round(u.walMb),
+        statsMb: Math.round(u.statsMb),
         totalMb: Math.round(u.totalMb),
         highWaterMb: HIGH_WATER_MB,
       };
