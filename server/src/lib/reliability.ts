@@ -47,23 +47,26 @@ export type StatRow = {
   observations: number;
   onTimePct: number;
   avgDelaySec: number;
+  medianDelaySec: number;
   p90DelaySec: number;
 };
 
 // Combine two aggregates weighted by observation count. Exact for the
-// averages; approximate for p90 (true p90 needs raw values, which the
-// rollups deliberately discard).
+// averages; approximate for median and p90 (true percentiles need raw
+// values, which the rollups deliberately discard).
 export function mergeStats(a: StatRow | null, b: StatRow | null): StatRow | null {
   if (!a) return b;
   if (!b) return a;
   const total = a.observations + b.observations;
-  if (total === 0) return { observations: 0, onTimePct: 0, avgDelaySec: 0, p90DelaySec: 0 };
+  if (total === 0)
+    return { observations: 0, onTimePct: 0, avgDelaySec: 0, medianDelaySec: 0, p90DelaySec: 0 };
   const w = (x: StatRow, pick: (s: StatRow) => number) =>
     (pick(x) * x.observations) / total;
   return {
     observations: total,
     onTimePct: w(a, (s) => s.onTimePct) + w(b, (s) => s.onTimePct),
     avgDelaySec: w(a, (s) => s.avgDelaySec) + w(b, (s) => s.avgDelaySec),
+    medianDelaySec: w(a, (s) => s.medianDelaySec) + w(b, (s) => s.medianDelaySec),
     p90DelaySec: w(a, (s) => s.p90DelaySec) + w(b, (s) => s.p90DelaySec),
   };
 }

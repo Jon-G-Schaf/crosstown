@@ -21,6 +21,7 @@ type RouteStat = {
   observations: number;
   onTimePct: number;
   avgDelaySec: number;
+  medianDelaySec: number;
   dayparts?: DaypartStat[];
 };
 
@@ -89,7 +90,7 @@ function RankingRow({
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium text-fog">{r.longName}</span>
           <span className="block font-mono text-xs text-faint">
-            {r.observations.toLocaleString()} arrivals · avg {fmtDelay(r.avgDelaySec)}
+            {r.observations.toLocaleString()} arrivals · median {fmtDelay(r.medianDelaySec)}
           </span>
         </span>
         <DaypartStrip dayparts={r.dayparts} />

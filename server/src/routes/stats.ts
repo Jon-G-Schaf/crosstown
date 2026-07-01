@@ -28,6 +28,7 @@ async function liveTodayStats(): Promise<{ rows: AggRow[] }> {
     observations: number;
     on_time_pct: number;
     avg_delay_sec: number;
+    median_delay_sec: number;
     p90_delay_sec: number;
   }>(statsSelectSql(today));
   const rows = raw.map((r) => ({
@@ -36,6 +37,7 @@ async function liveTodayStats(): Promise<{ rows: AggRow[] }> {
     observations: r.observations,
     onTimePct: r.on_time_pct,
     avgDelaySec: r.avg_delay_sec,
+    medianDelaySec: r.median_delay_sec,
     p90DelaySec: r.p90_delay_sec,
   }));
   liveCache = { at: Date.now(), rows };
@@ -149,6 +151,7 @@ export async function statsPlugin(app: FastifyInstance) {
                   observations: d.observations,
                   onTimePct: d.onTimePct,
                   avgDelaySec: d.avgDelaySec,
+                  medianDelaySec: d.medianDelaySec,
                 })),
             }
           : null;
@@ -193,6 +196,7 @@ export async function statsPlugin(app: FastifyInstance) {
             observations: h.observations,
             onTimePct: h.onTimePct,
             avgDelaySec: h.avgDelaySec,
+            medianDelaySec: h.medianDelaySec,
           })),
         ...liveForRoute
           .filter((l) => l.daypart === "all")
@@ -201,6 +205,7 @@ export async function statsPlugin(app: FastifyInstance) {
             observations: l.observations,
             onTimePct: l.onTimePct,
             avgDelaySec: l.avgDelaySec,
+            medianDelaySec: l.medianDelaySec,
             partial: true,
           })),
       ];

@@ -19,9 +19,16 @@ type Detail = {
     observations: number;
     onTimePct: number;
     avgDelaySec: number;
+    medianDelaySec: number;
     partial?: boolean;
   }[];
-  dayparts: { daypart: string; observations: number; onTimePct: number; avgDelaySec: number }[];
+  dayparts: {
+    daypart: string;
+    observations: number;
+    onTimePct: number;
+    avgDelaySec: number;
+    medianDelaySec: number;
+  }[];
 };
 
 export default async function RouteDetailPage({
@@ -49,7 +56,7 @@ export default async function RouteDetailPage({
     (acc, s) => ({
       obs: acc.obs + s.observations,
       weightedPct: acc.weightedPct + s.onTimePct * s.observations,
-      weightedDelay: acc.weightedDelay + s.avgDelaySec * s.observations,
+      weightedDelay: acc.weightedDelay + s.medianDelaySec * s.observations,
     }),
     { obs: 0, weightedPct: 0, weightedDelay: 0 },
   );
@@ -115,7 +122,7 @@ export default async function RouteDetailPage({
           </div>
           <div className="relative px-5 py-4">
             <p className="text-[10px] font-medium uppercase tracking-label text-faint">
-              Avg delay
+              Median delay
             </p>
             <p className="mt-1 font-mono text-3xl tracking-tight text-fog">
               {overallDelay == null ? "—" : fmtDelay(overallDelay)}
@@ -164,7 +171,7 @@ export default async function RouteDetailPage({
                   <th className="py-2 font-medium">Period</th>
                   <th className="py-2 text-right font-medium">Arrivals</th>
                   <th className="py-2 text-right font-medium">On time</th>
-                  <th className="py-2 text-right font-medium">Avg delay</th>
+                  <th className="py-2 text-right font-medium">Median delay</th>
                 </tr>
               </thead>
               <tbody className="font-mono">
@@ -182,7 +189,7 @@ export default async function RouteDetailPage({
                     >
                       {fmtPct(d.onTimePct)}
                     </td>
-                    <td className="py-2.5 text-right text-muted">{fmtDelay(d.avgDelaySec)}</td>
+                    <td className="py-2.5 text-right text-muted">{fmtDelay(d.medianDelaySec)}</td>
                   </tr>
                 ))}
               </tbody>

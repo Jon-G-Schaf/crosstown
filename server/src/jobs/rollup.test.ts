@@ -87,6 +87,7 @@ describe.runIf(available)("rollupServiceDate", () => {
     expect(aAm.observations).toBe(3);
     expect(aAm.onTimePct).toBeCloseTo(66.67, 1);
     expect(aAm.avgDelaySec).toBeCloseTo(166.67, 1);
+    expect(aAm.medianDelaySec).toBeCloseTo(100, 0); // percentile_cont over [0,100,400]
     expect(aAm.p90DelaySec).toBeCloseTo(340, 0); // percentile_cont over [0,100,400]
 
     const aPm = get("A", "pm_peak")!;

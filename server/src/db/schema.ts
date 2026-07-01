@@ -145,6 +145,7 @@ export const routeDayStats = pgTable(
     observations: integer("observations").notNull(),
     onTimePct: real("on_time_pct").notNull(),
     avgDelaySec: real("avg_delay_sec").notNull(),
+    medianDelaySec: real("median_delay_sec").notNull(),
     p90DelaySec: real("p90_delay_sec").notNull(),
   },
   (t) => [primaryKey({ columns: [t.routeId, t.serviceDate, t.daypart] })],

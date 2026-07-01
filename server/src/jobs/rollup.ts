@@ -28,6 +28,7 @@ export function statsSelectSql(serviceDate: string) {
         then 1.0 else 0.0 end
       ))::real as on_time_pct,
       avg(delay_sec)::real as avg_delay_sec,
+      (percentile_cont(0.5) within group (order by delay_sec))::real as median_delay_sec,
       (percentile_cont(0.9) within group (order by delay_sec))::real as p90_delay_sec
     from (
       select
@@ -74,12 +75,14 @@ export function pulseSelectSql(serviceDate: string) {
 export async function rollupServiceDate(serviceDate: string) {
   await db.execute(dsql`
     insert into route_day_stats
-      (route_id, service_date, daypart, observations, on_time_pct, avg_delay_sec, p90_delay_sec)
+      (route_id, service_date, daypart, observations, on_time_pct, avg_delay_sec,
+       median_delay_sec, p90_delay_sec)
     ${statsSelectSql(serviceDate)}
     on conflict (route_id, service_date, daypart) do update set
       observations = excluded.observations,
       on_time_pct = excluded.on_time_pct,
       avg_delay_sec = excluded.avg_delay_sec,
+      median_delay_sec = excluded.median_delay_sec,
       p90_delay_sec = excluded.p90_delay_sec
   `);
 }
